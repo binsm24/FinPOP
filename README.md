@@ -25,6 +25,9 @@ Kotlin, Jetpack Compose, Supabase(Auth·PostgreSQL·Edge Functions), Room, DataS
     └── docs/            # api, design, meeting-notes
 
 ## 협업 규칙
+
+Android 실행 환경과 로그인 화면 연결 방법은 [로그인 화면 적용](docs/design/login-compose.md)을 참고한다.
+
 - 브랜치: `main` ← `develop` ← `feat/<기능>`
 - 커밋: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`
 - `develop`으로 PR, 1명 이상 리뷰 후 머지
