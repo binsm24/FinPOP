@@ -1,6 +1,9 @@
 package com.finpop.app.feature.game
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,8 +14,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -21,8 +26,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.vector.PathParser
@@ -40,11 +45,17 @@ import com.finpop.app.ui.component.MainBottomNavigationBar
 import com.finpop.app.ui.component.MainTab
 import java.text.NumberFormat
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlin.random.Random
 
 private val Ink = Color(0xFF0F172A)
 private val Blue = Color(0xFF1D4ED8)
+private val AiRed = Color(0xFFDC2626)
 private val Paper = Color(0xFFF8FAFC)
 private val Muted = Color(0xFF475569)
+
+/** UI adapter IDs: map core.model.PlayerId explicitly when the domain module is merged. */
+enum class GameBoardPlayerId { P1, P2 }
 
 /** UI data only. The game owner supplies balances, turns, ownership and dice results. */
 data class GameBoardUiState(
@@ -52,14 +63,20 @@ data class GameBoardUiState(
     val aiGold: Int = 1850,
     val playerTurnsRemaining: Int = 4,
     val aiTurnsRemaining: Int = 5,
-    val isPlayerTurn: Boolean = true,
+    val currentPlayerId: GameBoardPlayerId = GameBoardPlayerId.P1,
+    // Keep the roller after the result arrives, even when currentPlayerId changes.
+    val dicePlayerId: GameBoardPlayerId = currentPlayerId,
+    // Set from TURN_READY, remaining turns and island wait status in the game owner.
+    val canRollDice: Boolean = true,
     val diceValue: Int = 4,
     val isRolling: Boolean = false,
     val playerPosition: Int = 1,
     val aiPosition: Int = 4,
     val playerOwnedTiles: Set<Int> = setOf(1, 8, 11),
     val aiOwnedTiles: Set<Int> = setOf(4, 5),
-)
+) {
+    val isPlayerTurn: Boolean get() = currentPlayerId == GameBoardPlayerId.P1
+}
 
 /**
  * Full-screen entry point, with reusable chrome. When a parent already owns the Scaffold,
@@ -70,7 +87,7 @@ data class GameBoardUiState(
 fun MainGameBoardScreen(
     onMenuClick: () -> Unit,
     onTabSelected: (MainTab) -> Unit,
-    onRollDice: () -> Unit,
+    onRollDice: (GameBoardPlayerId) -> Unit,
     onTileClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
     state: GameBoardUiState = GameBoardUiState(),
@@ -89,7 +106,7 @@ fun MainGameBoardScreen(
 @Composable
 fun MainGameBoardContent(
     state: GameBoardUiState,
-    onRollDice: () -> Unit,
+    onRollDice: (GameBoardPlayerId) -> Unit,
     onTileClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -101,22 +118,7 @@ fun MainGameBoardContent(
                 PlayerCard("나", state.playerGold, state.playerTurnsRemaining, state.isPlayerTurn, false, Modifier.weight(1f))
                 PlayerCard("AI", state.aiGold, state.aiTurnsRemaining, !state.isPlayerTurn, true, Modifier.weight(1f))
             }
-            Board(state, onTileClick)
-            val canRoll = state.isPlayerTurn && !state.isRolling && state.playerTurnsRemaining > 0
-            Button(onClick = onRollDice, enabled = canRoll,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).hardShadow(),
-                shape = RoundedCornerShape(2.dp), border = androidx.compose.foundation.BorderStroke(2.dp, Ink),
-                colors = ButtonDefaults.buttonColors(containerColor = Blue, contentColor = Color.White),
-                contentPadding = PaddingValues(12.dp)) {
-                DiceFace(state.diceValue, Modifier.size(20.dp), Color.White, Blue)
-                Spacer(Modifier.width(10.dp))
-                Text(when {
-                    state.isRolling -> "주사위 굴리는 중…"
-                    state.playerTurnsRemaining <= 0 -> "게임 종료"
-                    !state.isPlayerTurn -> "AI 턴 진행 중"
-                    else -> "주사위 굴리기"
-                }, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-            }
+            Board(state, onRollDice, onTileClick)
         }
     }
 }
@@ -170,12 +172,12 @@ private val Tiles = listOf(
 )
 
 @Composable
-private fun Board(state: GameBoardUiState, onTileClick: (Int) -> Unit) {
+private fun Board(state: GameBoardUiState, onRollDice: (GameBoardPlayerId) -> Unit, onTileClick: (Int) -> Unit) {
     val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
     BoxWithConstraints(Modifier.fillMaxWidth().hardShadow().background(Color(0xFFE2E8F0))
         .border(2.dp, Ink).padding(7.dp)) {
         val gap = 4.dp
-        val tileWidth = (maxWidth - gap * 3) / 4
+        val tileWidth = (this@BoxWithConstraints.maxWidth - gap * 3) / 4
         val tileHeight = (tileWidth * 1.18f).coerceAtLeast(99.dp) + 40.dp * (fontScale - 1f)
         Box(Modifier.fillMaxWidth().height(tileHeight * 5 + gap * 4)) {
             Box(Modifier.offset(x = tileWidth + gap, y = tileHeight + gap)
@@ -183,13 +185,16 @@ private fun Board(state: GameBoardUiState, onTileClick: (Int) -> Unit) {
                 .background(Paper, RoundedCornerShape(3.dp)).border(2.dp, Ink, RoundedCornerShape(3.dp)),
                 contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.size(80.dp).hardShadow(4f).background(Color.White, RoundedCornerShape(8.dp))
-                        .border(2.dp, Ink, RoundedCornerShape(8.dp)).padding(13.dp)) {
-                        DiceFace(state.diceValue, Modifier.fillMaxSize())
-                    }
+                    RollingDice(state, onRollDice)
                     Spacer(Modifier.height(12.dp))
-                    Text("DICE ${state.diceValue.coerceIn(1, 6)}", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-                    Text(if (state.isRolling) "주사위 굴리는 중" else "주사위 준비 완료",
+                    Text(if (state.isRolling) "ROLLING…" else "DICE ${state.diceValue.coerceIn(1, 6)}", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(when {
+                        state.isRolling -> "주사위 굴리는 중"
+                        state.playerTurnsRemaining <= 0 -> "게임 종료"
+                        !state.isPlayerTurn -> "AI 턴 진행 중"
+                        !state.canRollDice -> "이벤트 처리 중"
+                        else -> "주사위를 눌러 굴려보세요"
+                    },
                         color = Muted, fontSize = 9.sp, textAlign = TextAlign.Center)
                 }
             }
@@ -212,7 +217,7 @@ private fun Tile(tile: BoardTile, state: GameBoardUiState, onClick: () -> Unit, 
                 Text(tile.number, color = if (tile.id == 7 || tile.id == 0) Color.White else Ink,
                     modifier = Modifier.background(when (tile.id) { 7 -> Blue; 0 -> Muted; else -> Color.Transparent }).padding(horizontal = 1.dp),
                     fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                Text(tile.arrow, color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(tile.arrow, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Box(Modifier.size(if (tile.icon == "key") 36.dp else 27.dp)
@@ -222,9 +227,6 @@ private fun Tile(tile: BoardTile, state: GameBoardUiState, onClick: () -> Unit, 
                 }
                 Text(tile.title, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
             }
-            HorizontalDivider(thickness = 1.dp, color = Ink)
-            Text(tile.footer, Modifier.fillMaxWidth().background(if (tile.id == 7) Color(0xFFDBEAFE) else Color(0xFFF1F5F9)),
-                color = if (owned == Blue) Blue else Ink, fontSize = 9.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         }
         if (owned != null) {
             Box(Modifier.align(Alignment.TopStart).padding(top = 14.dp).rotate(-12f).size(23.dp)
@@ -249,6 +251,33 @@ private fun Pawn(ai: Boolean) {
         .border(1.5.dp, Ink, CircleShape).semantics { contentDescription = if (ai) "AI 현재 위치" else "내 현재 위치" },
         contentAlignment = Alignment.Center) {
         BoardIcon(if (ai) "robot" else "person", if (ai) Color.White else Ink, Modifier.size(15.dp))
+    }
+}
+
+@Composable
+private fun RollingDice(state: GameBoardUiState, onRollDice: (GameBoardPlayerId) -> Unit) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(state.isRolling, state.dicePlayerId) {
+        progress.snapTo(0f)
+        if (state.isRolling) progress.animateTo(1f, tween(900, easing = LinearOutSlowInEasing))
+    }
+    val rolling = state.isRolling
+    val rollerName = if (state.dicePlayerId == GameBoardPlayerId.P1) "플레이어" else "AI"
+    val dotColor = if (state.dicePlayerId == GameBoardPlayerId.P1) Blue else AiRed
+    val phase = progress.value
+    val face = if (rolling) (phase * 24).toInt() % 6 + 1 else state.diceValue
+    Box(Modifier.size(80.dp)
+        .graphicsLayer {
+            rotationZ = if (rolling) phase * 720f else 0f
+            translationY = if (rolling) (-kotlin.math.abs(kotlin.math.sin(phase * Math.PI * 3)) * 16.dp.toPx()).toFloat() else 0f
+        }
+        .hardShadow(4f).background(Color.White, RoundedCornerShape(8.dp))
+        .border(2.dp, Ink, RoundedCornerShape(8.dp))
+        .clickable(enabled = state.canRollDice && state.isPlayerTurn && !rolling && state.playerTurnsRemaining > 0,
+            role = Role.Button, onClickLabel = "주사위 굴리기", onClick = { onRollDice(state.currentPlayerId) })
+        .semantics { contentDescription = if (rolling) "$rollerName 주사위 굴리는 중" else "$rollerName 주사위 ${state.diceValue}" }
+        .padding(13.dp)) {
+        DiceFace(face, Modifier.fillMaxSize(), dotColor = dotColor)
     }
 }
 
@@ -308,7 +337,27 @@ private fun BoardIcon(kind: String, tint: Color, modifier: Modifier = Modifier) 
 private fun MainGameBoardPreview() {
     // Interactive preview only; production dice results come from the game owner.
     var dice by remember { mutableIntStateOf(4) }
+    var rolling by remember { mutableStateOf(false) }
+    LaunchedEffect(rolling) {
+        if (rolling) {
+            delay(900)
+            dice = Random.nextInt(1, 7)
+            rolling = false
+        }
+    }
     MaterialTheme {
-        MainGameBoardScreen({}, {}, { dice = dice % 6 + 1 }, {}, state = GameBoardUiState(diceValue = dice))
+        MainGameBoardScreen({}, {}, { if (!rolling) rolling = true }, {},
+            state = GameBoardUiState(diceValue = dice, isRolling = rolling))
+    }
+}
+
+@Preview(name = "Board · AI dice", showBackground = true, widthDp = 390, heightDp = 912)
+@Composable
+private fun AiDicePreview() {
+    MaterialTheme {
+        MainGameBoardScreen({}, {}, {}, {}, state = GameBoardUiState(
+            currentPlayerId = GameBoardPlayerId.P2, dicePlayerId = GameBoardPlayerId.P2,
+            diceValue = 6,
+        ))
     }
 }
