@@ -8,13 +8,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -23,11 +22,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.vector.PathParser
@@ -40,6 +40,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Constraints
+import kotlin.math.roundToInt
 import com.finpop.app.ui.component.MainAppBar
 import com.finpop.app.ui.component.MainBottomNavigationBar
 import com.finpop.app.ui.component.MainTab
@@ -57,6 +59,12 @@ private val Muted = Color(0xFF475569)
 /** UI adapter IDs: map core.model.PlayerId explicitly when the domain module is merged. */
 enum class GameBoardPlayerId { P1, P2 }
 
+data class TilePurchaseUiEvent(
+    val eventId: String,
+    val tileId: Int,
+    val ownerId: GameBoardPlayerId,
+)
+
 /** UI data only. The game owner supplies balances, turns, ownership and dice results. */
 data class GameBoardUiState(
     val playerGold: Int = 2400,
@@ -72,16 +80,36 @@ data class GameBoardUiState(
     val isRolling: Boolean = false,
     val playerPosition: Int = 1,
     val aiPosition: Int = 4,
-    val playerOwnedTiles: Set<Int> = setOf(1, 8, 11),
-    val aiOwnedTiles: Set<Int> = setOf(4, 5),
+    val playerOwnedTiles: Set<Int> = emptySet(),
+    val aiOwnedTiles: Set<Int> = emptySet(),
+    val pendingPurchases: List<TilePurchaseUiEvent> = emptyList(),
+    val receivedPurchaseIds: Set<String> = emptySet(),
 ) {
     val isPlayerTurn: Boolean get() = currentPlayerId == GameBoardPlayerId.P1
+
+    /** Call only after purchase success, with IDs mapped to this board. Reset for a new game. */
+    fun withPurchase(event: TilePurchaseUiEvent): GameBoardUiState {
+        require(event.eventId.isNotBlank())
+        require(event.tileId in setOf(1, 2, 4, 5, 6, 8, 9, 11, 12, 13))
+        if (event.eventId in receivedPurchaseIds) return this
+        return copy(
+            playerOwnedTiles = if (event.ownerId == GameBoardPlayerId.P1) playerOwnedTiles + event.tileId else playerOwnedTiles - event.tileId,
+            aiOwnedTiles = if (event.ownerId == GameBoardPlayerId.P2) aiOwnedTiles + event.tileId else aiOwnedTiles - event.tileId,
+            pendingPurchases = pendingPurchases + event,
+            receivedPurchaseIds = receivedPurchaseIds + event.eventId,
+        )
+    }
+
+    fun purchaseAnimationFinished(eventId: String): GameBoardUiState =
+        if (pendingPurchases.firstOrNull()?.eventId == eventId)
+            copy(pendingPurchases = pendingPurchases.drop(1)) else this
 }
 
 /**
  * Full-screen entry point, with reusable chrome. When a parent already owns the Scaffold,
  * use MainGameBoardContent in its content slot to avoid duplicating app bars.
  * Tile IDs run clockwise from island (0) through dividend (13).
+ * Display numbers start at departure (00), skipping golden keys and the island.
  */
 @Composable
 fun MainGameBoardScreen(
@@ -91,6 +119,7 @@ fun MainGameBoardScreen(
     onTileClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
     state: GameBoardUiState = GameBoardUiState(),
+    onPurchaseAnimationFinished: (String) -> Unit = {},
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize().background(Paper).safeDrawingPadding(),
@@ -99,7 +128,7 @@ fun MainGameBoardScreen(
         topBar = { MainAppBar("Game Board", onMenuClick) },
         bottomBar = { MainBottomNavigationBar(MainTab.Board, onTabSelected) },
     ) { padding ->
-        MainGameBoardContent(state, onRollDice, onTileClick, Modifier.padding(padding))
+        MainGameBoardContent(state, onRollDice, onTileClick, Modifier.padding(padding), onPurchaseAnimationFinished)
     }
 }
 
@@ -109,16 +138,42 @@ fun MainGameBoardContent(
     onRollDice: (GameBoardPlayerId) -> Unit,
     onTileClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    onPurchaseAnimationFinished: (String) -> Unit = {},
 ) {
-    Box(modifier.fillMaxSize().background(Paper), contentAlignment = Alignment.TopCenter) {
-        Column(Modifier.widthIn(max = 520.dp).fillMaxWidth()
-            .verticalScroll(rememberScrollState()).padding(start = 12.dp, end = 15.dp, top = 8.dp, bottom = 18.dp),
+    FitBoardViewport(modifier.fillMaxSize().background(Paper)) {
+        Column(Modifier.fillMaxSize()
+            .padding(start = 12.dp, end = 15.dp, top = 8.dp, bottom = 10.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PlayerCard("나", state.playerGold, state.playerTurnsRemaining, state.isPlayerTurn, false, Modifier.weight(1f))
                 PlayerCard("AI", state.aiGold, state.aiTurnsRemaining, !state.isPlayerTurn, true, Modifier.weight(1f))
             }
-            Board(state, onRollDice, onTileClick)
+            Board(state, onRollDice, onTileClick, Modifier.weight(1f).fillMaxWidth(), onPurchaseAnimationFinished)
+        }
+    }
+}
+
+/** Measure the entire body before scaling, so drawing, layout and hit targets agree.
+ * Small windows fit the full board instead of clipping fixed-size icons and text.
+ * Scaffold has already excluded app bars and system insets from these constraints.
+ */
+@Composable
+private fun FitBoardViewport(modifier: Modifier, content: @Composable () -> Unit) {
+    val textScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val fit = minOf(1f, width / (360.dp.toPx() * textScale),
+            height / (650.dp.toPx() * textScale)).coerceAtLeast(0.001f)
+        val body = measurables.single().measure(Constraints.fixed(
+            (width / fit).roundToInt(), (height / fit).roundToInt(),
+        ))
+        layout(width, height) {
+            body.placeWithLayer(0, 0) {
+                scaleX = fit
+                scaleY = fit
+                transformOrigin = TransformOrigin(0f, 0f)
+            }
         }
     }
 }
@@ -156,29 +211,30 @@ private data class BoardTile(val id: Int, val column: Int, val row: Int, val num
 
 private val Tiles = listOf(
     BoardTile(0, 0, 0, "휴식", "무인도", "1턴 대기", "island", "→", Color(0xFFE8F5E9)),
-    BoardTile(1, 1, 0, "01", "예금", "120G", "deposit", "→"),
-    BoardTile(2, 2, 0, "02", "적금", "150G", "savings", "→"),
+    BoardTile(1, 1, 0, "06", "예금", "120G", "deposit", "→"),
+    BoardTile(2, 2, 0, "07", "적금", "150G", "savings", "→"),
     BoardTile(3, 3, 0, "", "황금열쇠", "이벤트", "key", "↓", Color(0xFFFFDDB8)),
-    BoardTile(4, 3, 1, "03", "금리", "180G", "rate", "↓"),
-    BoardTile(5, 3, 2, "04", "자산", "210G", "asset", "↓"),
-    BoardTile(6, 3, 3, "05", "펀드", "170G", "fund", "↓"),
-    BoardTile(7, 3, 4, "START", "출발", "+200G", "flag", "←"),
-    BoardTile(8, 2, 4, "07", "주식", "190G", "stock", "←"),
-    BoardTile(9, 1, 4, "08", "채권", "160G", "bond", "←"),
+    BoardTile(4, 3, 1, "08", "금리", "180G", "rate", "↓"),
+    BoardTile(5, 3, 2, "09", "자산", "210G", "asset", "↓"),
+    BoardTile(6, 3, 3, "10", "펀드", "170G", "fund", "↓"),
+    BoardTile(7, 3, 4, "00", "출발", "+200G", "flag", "←"),
+    BoardTile(8, 2, 4, "01", "주식", "190G", "stock", "←"),
+    BoardTile(9, 1, 4, "02", "채권", "160G", "bond", "←"),
     BoardTile(10, 0, 4, "", "황금열쇠", "이벤트", "key", "↑", Color(0xFFFFDDB8)),
-    BoardTile(11, 0, 3, "09", "만기", "200G", "hourglass", "↑"),
-    BoardTile(12, 0, 2, "10", "복리", "220G", "chart", "↑"),
-    BoardTile(13, 0, 1, "11", "배당", "240G", "coin", "↑"),
+    BoardTile(11, 0, 3, "03", "만기", "200G", "hourglass", "↑"),
+    BoardTile(12, 0, 2, "04", "복리", "220G", "chart", "↑"),
+    BoardTile(13, 0, 1, "05", "배당", "240G", "coin", "↑"),
 )
 
 @Composable
-private fun Board(state: GameBoardUiState, onRollDice: (GameBoardPlayerId) -> Unit, onTileClick: (Int) -> Unit) {
-    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
-    BoxWithConstraints(Modifier.fillMaxWidth().hardShadow().background(Color(0xFFE2E8F0))
+private fun Board(state: GameBoardUiState, onRollDice: (GameBoardPlayerId) -> Unit, onTileClick: (Int) -> Unit,
+    modifier: Modifier = Modifier, onPurchaseAnimationFinished: (String) -> Unit = {}) {
+    val activePurchase = state.pendingPurchases.firstOrNull()
+    BoxWithConstraints(modifier.hardShadow().background(Color(0xFFE2E8F0))
         .border(2.dp, Ink).padding(7.dp)) {
         val gap = 4.dp
         val tileWidth = (this@BoxWithConstraints.maxWidth - gap * 3) / 4
-        val tileHeight = (tileWidth * 1.18f).coerceAtLeast(99.dp) + 40.dp * (fontScale - 1f)
+        val tileHeight = ((this@BoxWithConstraints.maxHeight - gap * 4) / 5).coerceAtLeast(0.dp)
         Box(Modifier.fillMaxWidth().height(tileHeight * 5 + gap * 4)) {
             Box(Modifier.offset(x = tileWidth + gap, y = tileHeight + gap)
                 .size(tileWidth * 2 + gap, tileHeight * 3 + gap * 2)
@@ -200,39 +256,41 @@ private fun Board(state: GameBoardUiState, onRollDice: (GameBoardPlayerId) -> Un
             }
             Tiles.forEach { tile ->
                 Tile(tile, state, { onTileClick(tile.id) },
-                    Modifier.offset(x = (tileWidth + gap) * tile.column, y = (tileHeight + gap) * tile.row).size(tileWidth, tileHeight))
+                    Modifier.offset(x = (tileWidth + gap) * tile.column, y = (tileHeight + gap) * tile.row).size(tileWidth, tileHeight),
+                    activePurchase?.takeIf { it.tileId == tile.id }, onPurchaseAnimationFinished)
             }
         }
     }
 }
 
 @Composable
-private fun Tile(tile: BoardTile, state: GameBoardUiState, onClick: () -> Unit, modifier: Modifier) {
-    val owned = when (tile.id) { in state.playerOwnedTiles -> Blue; in state.aiOwnedTiles -> Color(0xFFD9472B); else -> null }
+private fun Tile(tile: BoardTile, state: GameBoardUiState, onClick: () -> Unit, modifier: Modifier,
+    purchase: TilePurchaseUiEvent?, onPurchaseAnimationFinished: (String) -> Unit) {
+    val owned = when (tile.id) { in state.playerOwnedTiles -> Blue; in state.aiOwnedTiles -> AiRed; else -> null }
     Box(modifier.background(tile.color).border(2.dp, Ink)
         .clickable(role = Role.Button, onClickLabel = "${tile.title} 상세 보기", onClick = onClick)
-        .semantics { contentDescription = "${tile.title}, ${tile.footer}" }.padding(5.dp)) {
+        .semantics { contentDescription = "${tile.title}, ${tile.footer}" }.padding(4.dp)) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(tile.number, color = if (tile.id == 7 || tile.id == 0) Color.White else Ink,
                     modifier = Modifier.background(when (tile.id) { 7 -> Blue; 0 -> Muted; else -> Color.Transparent }).padding(horizontal = 1.dp),
-                    fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                Text(tile.arrow, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                Text(tile.arrow, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Box(Modifier.size(if (tile.icon == "key") 36.dp else 27.dp)
+                Box(Modifier.size(if (tile.icon == "key") 39.dp else 30.dp)
                     .background(if (tile.icon == "key") Color.White else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
                     BoardIcon(tile.icon, if (tile.icon in listOf("deposit", "stock", "chart", "flag", "coin")) Blue else Ink,
-                        Modifier.size(if (tile.icon == "island") 32.dp else 24.dp))
+                        Modifier.size(if (tile.icon == "island") 35.dp else 27.dp))
                 }
-                Text(tile.title, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
+                Text(tile.title, color = Ink, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
             }
         }
-        if (owned != null) {
-            Box(Modifier.align(Alignment.TopStart).padding(top = 14.dp).rotate(-12f).size(23.dp)
-                .border(1.dp, owned.copy(alpha = .45f), CircleShape), contentAlignment = Alignment.Center) {
-                Text("G", color = owned.copy(alpha = .45f), fontSize = 13.sp, fontWeight = FontWeight.Black)
-            }
+        // Queued purchases wait their turn instead of showing the new stamp prematurely.
+        val waiting = state.pendingPurchases.any { it.tileId == tile.id }
+        if (purchase != null || (owned != null && !waiting)) {
+            OwnershipStamp(purchase, owned ?: Blue, onPurchaseAnimationFinished,
+                Modifier.align(Alignment.TopStart).padding(top = 16.dp))
         }
         val playerHere = state.playerPosition == tile.id
         val aiHere = state.aiPosition == tile.id
@@ -246,11 +304,46 @@ private fun Tile(tile: BoardTile, state: GameBoardUiState, onClick: () -> Unit, 
 }
 
 @Composable
+private fun OwnershipStamp(event: TilePurchaseUiEvent?, settledColor: Color,
+    onFinished: (String) -> Unit, modifier: Modifier) {
+    val progress = remember(event?.eventId) { Animatable(if (event == null) 1f else 0f) }
+    val latestOnFinished by rememberUpdatedState(onFinished)
+    LaunchedEffect(event?.eventId) {
+        if (event != null) {
+            progress.animateTo(1f, tween(650))
+            latestOnFinished(event.eventId)
+        }
+    }
+    val p = progress.value
+    val stampScale = when {
+        p < .55f -> 2.4f - 1.55f * (p / .55f)
+        p < .75f -> .85f + .3f * ((p - .55f) / .2f)
+        else -> 1.15f - .15f * ((p - .75f) / .25f)
+    }
+    val tint = when (event?.ownerId) {
+        GameBoardPlayerId.P1 -> Blue
+        GameBoardPlayerId.P2 -> AiRed
+        null -> settledColor
+    }
+    Box(modifier.size(25.dp).graphicsLayer {
+        scaleX = stampScale
+        scaleY = stampScale
+        translationY = -24.dp.toPx() * (1f - p)
+        rotationZ = -12f
+        alpha = (.2f + p * .8f).coerceIn(0f, 1f)
+    }.border(1.5.dp, tint.copy(alpha = .65f), CircleShape)
+        .semantics { contentDescription = if (tint == Blue) "플레이어 소유 도장" else "AI 소유 도장" },
+        contentAlignment = Alignment.Center) {
+        Text("G", color = tint.copy(alpha = .65f), fontSize = 14.sp, fontWeight = FontWeight.Black)
+    }
+}
+
+@Composable
 private fun Pawn(ai: Boolean) {
-    Box(Modifier.size(23.dp).background(if (ai) Muted else Color(0xFFF59E0B), CircleShape)
+    Box(Modifier.size(25.dp).background(if (ai) Muted else Color(0xFFF59E0B), CircleShape)
         .border(1.5.dp, Ink, CircleShape).semantics { contentDescription = if (ai) "AI 현재 위치" else "내 현재 위치" },
         contentAlignment = Alignment.Center) {
-        BoardIcon(if (ai) "robot" else "person", if (ai) Color.White else Ink, Modifier.size(15.dp))
+        BoardIcon(if (ai) "robot" else "person", if (ai) Color.White else Ink, Modifier.size(17.dp))
     }
 }
 
@@ -332,6 +425,8 @@ private fun BoardIcon(kind: String, tint: Color, modifier: Modifier = Modifier) 
 
 @Preview(name = "Board · reference", showBackground = true, widthDp = 390, heightDp = 912)
 @Preview(name = "Board · compact", showBackground = true, widthDp = 360, heightDp = 640)
+@Preview(name = "Board · short", showBackground = true, widthDp = 320, heightDp = 480)
+@Preview(name = "Board · landscape", showBackground = true, widthDp = 800, heightDp = 400)
 @Preview(name = "Board · large text", showBackground = true, widthDp = 390, heightDp = 844, fontScale = 1.5f)
 @Composable
 private fun MainGameBoardPreview() {
@@ -359,5 +454,24 @@ private fun AiDicePreview() {
             currentPlayerId = GameBoardPlayerId.P2, dicePlayerId = GameBoardPlayerId.P2,
             diceValue = 6,
         ))
+    }
+}
+
+/** Interactive Preview: tapping a purchasable tile simulates a confirmed purchase. */
+@Preview(name = "Board · purchase stamp demo", showBackground = true, widthDp = 390, heightDp = 912)
+@Composable
+private fun PurchaseStampPreview() {
+    var state by remember { mutableStateOf(GameBoardUiState()) }
+    var sequence by remember { mutableIntStateOf(0) }
+    MaterialTheme {
+        MainGameBoardScreen({}, {}, {}, { tileId ->
+            if (tileId in setOf(1, 2, 4, 5, 6, 8, 9, 11, 12, 13)) {
+                sequence++
+                state = state.withPurchase(TilePurchaseUiEvent("preview-$sequence", tileId,
+                    if (sequence % 2 == 1) GameBoardPlayerId.P1 else GameBoardPlayerId.P2))
+            }
+        }, state = state, onPurchaseAnimationFinished = { eventId ->
+            state = state.purchaseAnimationFinished(eventId)
+        })
     }
 }

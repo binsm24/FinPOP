@@ -27,6 +27,7 @@ fun Navigation(onMessage: (String) -> Unit) {
 
     Crossfade(targetState = showGameBoard, label = "Login to game board") { gameBoard ->
         if (gameBoard) {
+            var boardState by remember { mutableStateOf(GameBoardUiState()) }
             var diceValue by rememberSaveable { mutableIntStateOf(4) }
             var isRolling by remember { mutableStateOf(false) }
             var dicePlayerId by rememberSaveable { mutableStateOf(GameBoardPlayerId.P1) }
@@ -38,7 +39,10 @@ fun Navigation(onMessage: (String) -> Unit) {
                 }
             }
             MainGameBoardScreen(
-                state = GameBoardUiState(diceValue = diceValue, isRolling = isRolling, dicePlayerId = dicePlayerId),
+                state = boardState.copy(diceValue = diceValue, isRolling = isRolling, dicePlayerId = dicePlayerId),
+                onPurchaseAnimationFinished = { eventId ->
+                    boardState = boardState.purchaseAnimationFinished(eventId)
+                },
                 onMenuClick = { onMessage("메뉴 연결 예정") },
                 onTabSelected = { tab ->
                     if (tab != MainTab.Board) onMessage("${tab.label} 화면 연결 예정")
