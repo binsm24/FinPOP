@@ -100,3 +100,16 @@ test("함수 이름과 접두사만 일치하는 다른 경로는 거절",async(
  assert.equal((await f.handler(r)).status,404);
  assert.equal(f.calls.length,0);
 });
+
+test("AI 이동은 별도 경로로 서버 연산을 호출",async()=>{
+ const f=fixture();
+ const response=await f.handler(request("/v1/games/"+gid+"/ai/rolls",{expectedVersion:2}));
+ assert.equal(response.status,200);
+ const body=JSON.parse(f.calls[1].options.body);
+ assert.equal(body.p_operation,"ai-roll");assert.equal(body.p_user_id,uid);
+});
+test("AI 이동 요청에서도 주사위·참가자 위조 차단",async()=>{
+ const f=fixture();
+ assert.equal((await f.handler(request("/v1/games/"+gid+"/ai/rolls",{expectedVersion:2,diceValue:6,playerId:"P1"}))).status,400);
+ assert.equal(f.calls.length,0);
+});

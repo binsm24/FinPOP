@@ -38,6 +38,7 @@ fun GameServerTestScreen() {
     var lastRoller by remember { mutableStateOf(GameBoardPlayerId.P1) }
     var animatedPosition by remember { mutableStateOf<Int?>(null) }
     var rolling by remember { mutableStateOf(false) }
+    var lastAiAttempt by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     fun run(action: suspend () -> Unit) {
@@ -92,6 +93,8 @@ fun GameServerTestScreen() {
 
     suspend fun send(change: PendingRequest) {
         rolling = change.path.endsWith("/rolls")
+        val actor = if (change.path.endsWith("/ai/rolls")) "P2" else "P1"
+        if (rolling) lastRoller = if (actor == "P2") GameBoardPlayerId.P2 else GameBoardPlayerId.P1
         try {
             val (status, response) = request("/functions/v1/finpop-api" + change.path, "POST", change.body, change.key)
             val data = response.optJSONObject("data")
@@ -101,11 +104,11 @@ fun GameServerTestScreen() {
                 val players = game?.optJSONArray("players")
                 animatedPosition = players?.let { list ->
                     (0 until list.length()).map { list.getJSONObject(it) }
-                        .firstOrNull { it.optString("playerId") == "P1" }?.getInt("position")
+                        .firstOrNull { it.optString("playerId") == actor }?.getInt("position")
                 }
                 lastDice = requireNotNull(data).getInt("diceValue")
                 hasDiceResult = true
-                lastRoller = GameBoardPlayerId.P1
+                lastRoller = if (actor == "P2") GameBoardPlayerId.P2 else GameBoardPlayerId.P1
             }
             accept(status, response)
             // HTTP 응답이 확인되기 전에는 같은 요청 키를 유지합니다.
@@ -129,6 +132,19 @@ fun GameServerTestScreen() {
         run { send(change) }
     }
 
+    // 게임·버전별 자동 요청은 한 번만 보냅니다. 오류 이후에는 명시적으로 재시도합니다.
+    val aiGame = game
+    LaunchedEffect(showBoard, aiGame?.optString("gameId"), aiGame?.optInt("stateVersion"), busy, pending?.key) {
+        if (showBoard && aiGame != null &&
+            canRequestAiMovement(aiGame.optString("phase"), aiGame.optString("currentPlayerId"), busy || pending != null)) {
+            val attempt = aiGame.getString("gameId") + ":" + aiGame.getInt("stateVersion")
+            if (lastAiAttempt != attempt) {
+                lastAiAttempt = attempt
+                mutate("/v1/games/" + aiGame.getString("gameId") + "/ai/rolls",
+                    JSONObject().put("expectedVersion", aiGame.getInt("stateVersion")))
+            }
+        }
+    }
     val boardGame = game
     if (showBoard && boardGame != null) {
         GameServerBoardScreen(
@@ -156,6 +172,12 @@ fun GameServerTestScreen() {
                     mutate("/v1/games/" + boardGame.getString("gameId") + "/rolls",
                         JSONObject().put("expectedVersion", boardGame.getInt("stateVersion")))
             },
+            onAiMove = {
+                if (canRequestAiMovement(boardGame.optString("phase"),
+                        boardGame.optString("currentPlayerId"), busy || pending != null))
+                    mutate("/v1/games/" + boardGame.getString("gameId") + "/ai/rolls",
+                        JSONObject().put("expectedVersion", boardGame.getInt("stateVersion")))
+            },
             onRetry = { pending?.let { change -> if (!busy) run { send(change) } } },
         )
         return
@@ -163,7 +185,7 @@ fun GameServerTestScreen() {
     Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("실제 서버 초기 설정·주사위 테스트", style = MaterialTheme.typography.titleLarge)
-        Text("실제 DB에 테스트 게임이 저장됩니다. AI 차례·퀴즈 답변 이후 처리는 아직 지원하지 않습니다.")
+        Text("실제 DB에 테스트 게임이 저장됩니다. AI 이동까지 지원하며 퀴즈 답변 이후 처리는 아직 지원하지 않습니다.")
         if (token.isBlank()) {
             OutlinedTextField(publicKey, { publicKey = it }, label = { Text("프로젝트 anon 또는 publishable 공개 키") }, enabled = !busy)
             Text("테스트 계정의 access_token을 입력하세요. anon 키나 service_role 키를 사용자 토큰으로 넣지 마세요.")
@@ -200,7 +222,7 @@ fun GameServerTestScreen() {
                     mutate("/v1/games/${current.getString("gameId")}/rolls",
                         JSONObject().put("expectedVersion", current.getInt("stateVersion")))
                 }) { Text("3. 주사위 굴리기") }
-                if (current.optString("currentPlayerId") == "P2") Text("AI 선공입니다. 현재 서버는 AI 차례 처리를 지원하지 않습니다.")
+                if (current.optString("currentPlayerId") == "P2") Text("AI 차례입니다. 보드를 열면 AI 이동을 요청합니다.")
             }
             pending?.let { change ->
                 Button(enabled = !busy, onClick = { run { send(change) } }) { Text("같은 요청 재시도") }

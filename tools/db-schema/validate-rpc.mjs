@@ -3,6 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import {readFile,writeFile} from "node:fs/promises";
 import assert from "node:assert/strict";
 import {validateQuiz} from "./quiz-checks.mjs";
+import {validateAiMovement} from "./ai-movement-checks.mjs";
 import {validateBasicImport} from "./basic-import-checks.mjs";
 const db=new PGlite();
 await db.exec([
@@ -202,6 +203,13 @@ await test("RPC 출발 보상과 능력 동시 적용",async()=>{
  assert.equal(r.body.data.events.find(e=>e.type==="START_REWARD").amount,200);
 });
 
+await test("AI 업데이트 SQL은 기존 게임 상태·RPC 권한 보존",async()=>{
+ const before=(await rpc("get",game(),{},null)).body.data;
+ await db.exec(await readFile(new URL("../../docs/api/game-ai-movement-update.sql",import.meta.url),"utf8"));
+ assert.deepEqual((await rpc("get",game(),{},null)).body.data,before);
+ assert.equal((await db.query("select has_function_privilege('authenticated','public.finpop_game_action(uuid,text,uuid,uuid,jsonb)','EXECUTE') allowed")).rows[0].allowed,false);
+});
+await validateAiMovement({db,test,rpc,fixedDice,ids});
 await validateBasicImport({db,test});
 const report={engine:"PGlite 0.5.16",passed:results.filter(r=>r.passed).length,failed:results.filter(r=>!r.passed).length,results};
 await writeFile(new URL("./results.json",import.meta.url),JSON.stringify(report,null,2));

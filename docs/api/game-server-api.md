@@ -10,10 +10,10 @@
 - supabase/functions/finpop-api/index.ts: Supabase Edge Function 진입점.
 - supabase/functions/finpop-api/handler.mjs: Auth 검증과 HTTP 요청·응답 처리.
 - tools/db-schema/validate-rpc.mjs: 기본 스키마·문항 검수·RPC 통합 검증.
-- tools/db-schema/handler.test.mjs: 인증·HTTP 요청·배포 경로 검증 18개.
+- tools/db-schema/handler.test.mjs: 인증·HTTP 요청·배포 경로 검증 20개.
 
 서버 파일은 Android app 모듈과 다른 런타임입니다.
-Android debug 전용 GameServerTestScreen에서 HTTP로 직접 호출합니다. 공통 GameRepository의 원격 구현과 팀원 보드 화면 연결은 후속 작업입니다.
+Android debug 전용 GameServerTestScreen에서 HTTP로 직접 호출합니다. 팀원 MainGameBoardContent에 서버 상태·주사위 콜백을 연결했습니다. 공통 GameRepository의 원격 구현은 후속 작업입니다.
 DB 함수 SQL은 docs/api에 보관합니다. game-quiz-setup.sql과 basic-finance-30-import.sql은 대시보드에서 수동 적용했으며, 기존 사용자·캐릭터 테이블은 유지했습니다. 이미 적용한 프로젝트에 생성·등록 SQL을 다시 실행하지 않습니다.
 
 ## 지원 API
@@ -26,6 +26,7 @@ DB 함수 SQL은 docs/api에 보관합니다. game-quiz-setup.sql과 basic-finan
 | POST | /v1/games | 보유 캐릭터·레벨·완료 횟수 검증, 양측 700G·7턴 생성 |
 | GET | /v1/games/{gameId} | 본인 게임 상태 조회 |
 | POST | /v1/games/{gameId}/initiative | 동률 재추첨·선공·현재 차례 생성 |
+| POST | /v1/games/{gameId}/ai/rolls | AI 현재 차례의 서버 주사위·이동·퀴즈 발급 |
 | POST | /v1/games/{gameId}/rolls | 사용자 이동·치즈 능력·출발 보상·필요한 퀴즈 발급 |
 
 상태 변경 요청은 UUID Idempotency-Key 헤더와 application/json 본문이 필요합니다.
@@ -62,7 +63,7 @@ AI는 CHEESE Lv.1로 시작합니다. 계정 wallet_gold는 게임 생성 시 �
 다른 캐릭터 이동 능력은 ABILITY_UNAVAILABLE로 거절하고 이동·재화를 저장하지 않습니다.
 황금열쇠는 EVENT_RULES_UNAVAILABLE로 거절하고 상태를 저장하지 않습니다.
 무인도는 도착 상태와 다음 차례 대기 1회를 기록하지만 대기 처리 API는 아직 없습니다.
-AI 선공이면 사용자 rolls는 거절됩니다. AI 차례 API도 후속 작업입니다.
+AI 선공이면 사용자 rolls는 거절됩니다. AI 이동은 별도 ai/rolls 경로로 처리합니다. AI 퀴즈 판정·구매·차례 종료는 아직 지원하지 않습니다.
 따라서 이 서버 구현만으로 전체 게임을 완주할 수는 없습니다.
 
 ## 퀴즈 저장소
@@ -117,3 +118,25 @@ FinPOP 게임 테스트 → 실제 서버 테스트로 이동에서 프로젝트
 - https://supabase.com/docs/guides/functions/secrets
 
 
+
+## AI 이동 업데이트 (로컬 구현 완료, 원격 적용 전)
+
+사용자·AI 이동은 같은 RPC 로직을 사용하며 ai-roll 연산은 P2 차례에만 허용합니다.
+요청 본문은 expectedVersion만 받고, 인증된 게임 소유자와 요청 키·상태 버전을 검사합니다.
+응답에는 playerId, diceValue, movementPath, events, game이 포함됩니다.
+퀴즈는 이동한 참가자에게 발급되며 정답·해설은 이동 응답에 포함하지 않습니다.
+
+기존 프로젝트 적용 순서:
+1. SQL Editor에서 docs/api/game-ai-movement-update.sql 전체를 실행합니다.
+2. Edge Functions → finpop-api → handler.mjs를 로컬 최신 파일 전체로 교체하고 Deploy updates를 누릅니다.
+3. Android debug 앱을 다시 빌드·실행하고 기존 게임 ID를 조회합니다.
+4. 서버 상태로 보드 열기를 누르면 TURN_READY·P2에서 게임·버전별 한 번 자동 이동을 요청합니다.
+5. 응답 유실 시 같은 요청 재시도, 확정된 HTTP 오류 해결 후에는 AI 이동 요청 다시 시도를 사용합니다.
+
+업데이트 SQL은 기존 계정·문항·게임을 변경하지 않고 public.finpop_game_action만 교체하며 서버 전용 권한을 유지합니다.
+이미 적용한 프로젝트에서 game-quiz-setup.sql이나 문항 등록 SQL을 다시 실행하지 않습니다.
+새 프로젝트용 game-quiz-setup.sql에도 같은 AI 이동 함수를 반영했습니다.
+팀원 보드 원본은 수정하지 않고 debug 연결 파일에서 위치와 주사위 색상을 변환합니다.
+황금열쇠 도착은 기존과 같이 EVENT_RULES_UNAVAILABLE로 전체 이동을 롤백합니다.
+AI가 퀴즈에 도착하면 QUIZ_OPEN, 퀴즈가 필요 없는 칸이면 TURN_REVIEW에서 멈춥니다.
+이번 단계는 AI 이동까지이며 퀴즈 판정·정산·차례 종료·자동 반복 플레이는 후속 작업입니다.

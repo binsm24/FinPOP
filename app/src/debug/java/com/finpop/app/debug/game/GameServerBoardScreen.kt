@@ -19,7 +19,7 @@ internal fun GameServerBoardScreen(
     game: JSONObject, state: GameBoardUiState,
     busy: Boolean, canRetry: Boolean, responseText: String, hasDiceResult: Boolean,
     onBack: () -> Unit, onRefresh: () -> Unit, onInitiative: () -> Unit,
-    onRoll: () -> Unit, onRetry: () -> Unit,
+    onRoll: () -> Unit, onRetry: () -> Unit, onAiMove: () -> Unit,
 ) {
     var details by remember { mutableStateOf<String?>(null) }
     BackHandler { onBack() }
@@ -27,7 +27,7 @@ internal fun GameServerBoardScreen(
     val status = when {
         phase == "INITIATIVE_PENDING" -> "선공 결정 전입니다."
         phase == "QUIZ_OPEN" -> "퀴즈가 발급됐습니다. 답변 처리는 아직 지원하지 않습니다."
-        game.optString("currentPlayerId") == "P2" -> "AI 차례입니다. AI 이동은 아직 지원하지 않습니다."
+        game.optString("currentPlayerId") == "P2" -> "AI 차례입니다. 서버에 이동을 요청합니다."
         phase != "TURN_READY" -> "이동 후 처리 대기: $phase"
         else -> "사용자 차례입니다. 보드 중앙 주사위를 눌러주세요."
     }
@@ -47,6 +47,9 @@ internal fun GameServerBoardScreen(
             }
             if (canRetry && !busy) {
                 Button(onClick = onRetry, modifier = Modifier.padding(horizontal = 12.dp)) { Text("같은 요청 재시도") }
+            }
+            if (canRequestAiMovement(phase, game.optString("currentPlayerId"), busy || canRetry)) {
+                TextButton(onClick = onAiMove) { Text("AI 이동 요청 다시 시도") }
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             MainGameBoardContent(

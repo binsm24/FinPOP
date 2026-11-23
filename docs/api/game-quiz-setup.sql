@@ -450,11 +450,11 @@ declare
  v_meta jsonb := jsonb_build_object('serverTime',clock_timestamp(),'requestId',gen_random_uuid());
  v_fingerprint jsonb := jsonb_build_object('operation',p_operation,'gameId',p_game_id,'body',p_body);
  v_data jsonb; v_envelope jsonb; v_status integer := 200; v_code text;
- v_mutation boolean := p_operation in ('create','initiative','roll');
+ v_mutation boolean := p_operation in ('create','initiative','roll','ai-roll');
  v_level integer; v_stage integer; v_user_level integer; v_completed integer;
  v_a integer; v_b integer; v_dice integer; v_position integer; v_bonus integer;
  v_path jsonb; v_rolls jsonb := '[]'::jsonb; v_events jsonb := '[]'::jsonb;
- v_first text; v_turn uuid; v_tile jsonb; v_owner text; v_topic text;
+ v_actor text; v_first text; v_turn uuid; v_tile jsonb; v_owner text; v_topic text;
  v_attempt uuid; v_issued timestamptz; v_active uuid;
 begin
  if p_user_id is null then
@@ -512,7 +512,7 @@ begin
        (v_game_id,'P1',false,p_body->>'characterId',v_level),(v_game_id,'P2',true,'CHEESE',1);
      insert into public.game_tiles(game_id,tile_id) select v_game_id,generate_series(0,13);
      v_data:=finpop_private.game_snapshot(v_game_id);
-   elsif p_operation in ('get','initiative','roll') then
+   elsif p_operation in ('get','initiative','roll','ai-roll') then
      if p_game_id is null then perform finpop_private.game_fail('INVALID_REQUEST'); end if;
      select * into g from public.game_sessions where id=p_game_id for update;
      if not found then perform finpop_private.game_fail('RESOURCE_NOT_FOUND'); end if;
@@ -542,9 +542,11 @@ begin
            state_version=state_version+1,updated_at=clock_timestamp() where id=g.id;
          v_data:=jsonb_build_object('rolls',v_rolls,'firstPlayerId',v_first,'game',finpop_private.game_snapshot(g.id));
        else
-         if g.current_player_id is distinct from 'P1' then perform finpop_private.game_fail('NOT_YOUR_TURN'); end if;
+         v_actor:=case when p_operation='ai-roll' then 'P2' else 'P1' end;
+         if g.mode<>'AI' or g.current_player_id is distinct from v_actor then perform finpop_private.game_fail('NOT_YOUR_TURN'); end if;
          if g.phase<>'TURN_READY' or g.current_turn_id is null then perform finpop_private.game_fail('INVALID_PHASE'); end if;
-         select * into p from public.game_players where game_id=g.id and player_id='P1' for update;
+         select * into p from public.game_players where game_id=g.id and player_id=v_actor for update;
+         if not found or p.is_ai is distinct from (v_actor='P2') then perform finpop_private.game_fail('INVALID_PHASE'); end if;
          if p.remaining_turns<=0 or p.island_wait_turns>0 then perform finpop_private.game_fail('INVALID_PHASE'); end if;
          -- 나머지 9종의 능력은 명세 구현 후 지원합니다. 미구현 능력을 생략하지 않습니다.
          if p.character_id<>'CHEESE' then perform finpop_private.game_fail('ABILITY_UNAVAILABLE'); end if;
@@ -554,17 +556,17 @@ begin
          select jsonb_agg((p.position+step)%14 order by step) into v_path from generate_series(1,v_dice) step;
          v_position:=(p.position+v_dice)%14;
          v_bonus:=30+5*(p.character_level-1);
-         v_events:=jsonb_build_array(jsonb_build_object('type','ABILITY_GOLD','playerId','P1',
+         v_events:=jsonb_build_array(jsonb_build_object('type','ABILITY_GOLD','playerId',v_actor,
            'amount',v_bonus,'abilityId','GOLDEN_POP'));
          if p.position+v_dice>=14 then
            v_bonus:=v_bonus+200;
-           v_events:=v_events||jsonb_build_array(jsonb_build_object('type','START_REWARD','playerId','P1','amount',200));
+           v_events:=v_events||jsonb_build_array(jsonb_build_object('type','START_REWARD','playerId',v_actor,'amount',200));
          end if;
          v_tile:=finpop_private.game_config()->'tiles'->v_position;
          v_topic:=v_tile->>'topic';
          select owner_player_id into v_owner from public.game_tiles where game_id=g.id and tile_id=v_position;
          if v_topic='GOLDEN_KEY' then perform finpop_private.game_fail('EVENT_RULES_UNAVAILABLE'); end if;
-         if v_topic not in ('START','ISLAND') and v_owner is distinct from 'P1' then
+         if v_topic not in ('START','ISLAND') and v_owner is distinct from v_actor then
            select v.*, root.topic, root.source_type, answer.correct_choice_id, answer.explanation,
              (select jsonb_agg(jsonb_build_object('id',s.id,'title',s.title,'url',s.url,
                'publishedAt',s.published_at,'retrievedAt',s.retrieved_at) order by s.id)
@@ -586,7 +588,7 @@ begin
            v_issued:=clock_timestamp();
            insert into public.game_quiz_attempts(game_id,turn_id,player_id,question_id,question_version_id,tile_id,
              topic,source_type,stage,question,hint,choices,issued_at,deadline_at)
-             values(g.id,g.current_turn_id,'P1',q.question_id,q.id,v_position,q.topic,q.source_type,q.stage,q.question,q.hint,
+             values(g.id,g.current_turn_id,v_actor,q.question_id,q.id,v_position,q.topic,q.source_type,q.stage,q.question,q.hint,
                q.choices,v_issued,v_issued+interval '20 seconds') returning id into v_attempt;
            insert into finpop_private.game_quiz_answers(attempt_id,correct_choice_id,explanation,source)
              values(v_attempt,q.correct_choice_id,q.explanation,q.source);
@@ -595,11 +597,11 @@ begin
            ability_state=jsonb_set(ability_state,'{triggerCount}',
              to_jsonb(coalesce((ability_state->>'triggerCount')::integer,0)+1)),
            island_wait_turns=case when v_topic='ISLAND' and remaining_turns>1 then 1 else island_wait_turns end
-           where game_id=g.id and player_id='P1';
+           where game_id=g.id and player_id=v_actor;
          update public.game_turns set dice_value=v_dice,movement_path=v_path where id=g.current_turn_id;
          update public.game_sessions set phase=case when v_attempt is not null then 'QUIZ_OPEN' else 'TURN_REVIEW' end,
            state_version=state_version+1,updated_at=clock_timestamp() where id=g.id;
-         v_data:=jsonb_build_object('diceValue',v_dice,'movementPath',v_path,'events',v_events,
+         v_data:=jsonb_build_object('playerId',v_actor,'diceValue',v_dice,'movementPath',v_path,'events',v_events,
            'game',finpop_private.game_snapshot(g.id));
        end if;
      end if;

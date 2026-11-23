@@ -42,8 +42,12 @@ internal fun JSONObject.toServerBoardState(
         canRollDice = canRollOnServerBoard(optString("phase"), active,
             user.getInt("remainingTurns"), user.getInt("islandWaitTurns"), blocked),
         diceValue = dice, isRolling = rolling,
-        playerPosition = serverTileToBoard(animatedPosition ?: user.getInt("position")),
-        aiPosition = serverTileToBoard(ai.getInt("position")),
+        playerPosition = serverTileToBoard(if (roller == GameBoardPlayerId.P1) animatedPosition ?: user.getInt("position") else user.getInt("position")),
+        aiPosition = serverTileToBoard(if (roller == GameBoardPlayerId.P2) animatedPosition ?: ai.getInt("position") else ai.getInt("position")),
         playerOwnedTiles = owned("P1"), aiOwnedTiles = owned("P2"),
     )
 }
+
+/** AI 요청도 현재 AI 차례이며 이동 가능한 상태일 때만 보냅니다. */
+internal fun canRequestAiMovement(phase: String, playerId: String?, blocked: Boolean): Boolean =
+    phase == "TURN_READY" && playerId == "P2" && !blocked

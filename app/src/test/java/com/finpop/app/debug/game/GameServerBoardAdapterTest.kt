@@ -34,4 +34,11 @@ class GameServerBoardAdapterTest {
         assertFalse(canRollOnServerBoard("TURN_READY", "P1", 7, 1, false))
         assertFalse(canRollOnServerBoard("TURN_READY", "P1", 7, 0, true))
     }
+
+    @Test fun aiOnlyMovesWhenReadyAndNotBlocked() {
+        assertTrue(canRequestAiMovement("TURN_READY", "P2", false))
+        assertFalse(canRequestAiMovement("TURN_READY", "P1", false))
+        assertFalse(canRequestAiMovement("QUIZ_OPEN", "P2", false))
+        assertFalse(canRequestAiMovement("TURN_READY", "P2", true))
+    }
 }

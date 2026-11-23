@@ -15,12 +15,12 @@ export function createHandler({url, publicKey, serviceKey, fetcher=fetch, uuid=(
       if(request.method==="GET" && pathname==="/v1/game-config") operation="config";
       else if(request.method==="POST" && pathname==="/v1/games") operation="create";
       else{
-        const match=pathname.match(/^\/v1\/games\/([^/]+)(?:\/(initiative|rolls))?$/);
+        const match=pathname.match(/^\/v1\/games\/([^/]+)(?:\/(initiative|rolls|ai\/rolls))?$/);
         if(!match) return error(404,"RESOURCE_NOT_FOUND","요청한 API를 찾을 수 없습니다.");
         gameId=match[1];
         if(!UUID.test(gameId)) return error(400,"INVALID_REQUEST","gameId는 UUID여야 합니다.");
         if(request.method==="GET" && !match[2]) operation="get";
-        else if(request.method==="POST" && match[2]) operation=match[2]==="rolls"?"roll":"initiative";
+        else if(request.method==="POST" && match[2]) operation=match[2]==="rolls"?"roll":match[2]==="ai/rolls"?"ai-roll":"initiative";
         else return error(405,"METHOD_NOT_ALLOWED","지원하지 않는 메서드입니다.");
       }
       const authorization=request.headers.get("Authorization");
