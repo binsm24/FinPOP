@@ -1,0 +1,11 @@
+{
+  "name": "finpop-db-schema-validation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node validate-rpc.mjs && node --test handler.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.16"
+  }
+}

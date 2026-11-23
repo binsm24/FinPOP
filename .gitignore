@@ -4,3 +4,19 @@
 local.properties
 .idea/
 *.iml
+
+# 로컬 환경변수와 인증 설정
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Supabase CLI의 로컬 연결 정보와 캐시
+supabase/.temp/
+supabase/.branches/
+
+# 앱 서명 키와 서명 비밀번호 설정
+*.jks
+*.keystore
+keystore.properties
+key.properties

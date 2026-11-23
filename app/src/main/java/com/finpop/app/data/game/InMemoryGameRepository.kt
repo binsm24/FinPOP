@@ -6,11 +6,11 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
-moryGameRepo * 단일 로컬 사용자를 위한 개발용 구현입니다. DB·HTTP·인증·계정 보상 지급은 포함하지 않습니다.
-* 이동 후 LANDING_PENDING에서 멈춥니다. 차례를 마치려면 캐릭터 능력·퀴즈 발급·이벤트 처리를
-* 연결해야 합니다. 운영 게임의 상태를 확정하는 서버 대신 사용하면 안 됩니다.
-*/
-class InMesitory(
+ * 단일 사용자 로컬 검증용입니다. DB·HTTP·인증·계정 보상은 포함하지 않습니다.
+ * 일반 칸의 퀴즈·구매·정산·차례 종료를 지원합니다.
+ * 특수칸과 캐릭터 능력은 별도 연결 대상이며, 운영 서버 대신 사용하면 안 됩니다.
+ */
+class InMemoryGameRepository(
     private val profile: GameProfile = GameProfile(),
     private val quizProvider: LocalQuizProvider = SampleQuizProvider(),
     private val dice: () -> Int = { Random.nextInt(1, 7) },
