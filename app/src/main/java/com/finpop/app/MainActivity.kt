@@ -15,7 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
-import com.finpop.app.feature.auth.LoginScreen
+import com.finpop.app.navigation.Navigation
 import com.finpop.app.feature.splash.SplashScreen
 
 class MainActivity : ComponentActivity() {
@@ -47,12 +47,7 @@ class MainActivity : ComponentActivity() {
                             SplashScreen(onEnter = { showSplash = false })
                         }
                     } else {
-                        LoginScreen(
-                            onGoogleLogin = { showMessage("Google 로그인 연결 예정") },
-                            onGuestLogin = { showMessage("게스트 인증 연결 예정") },
-                            onTermsClick = { showMessage("이용약관 화면 연결 예정") },
-                            onPrivacyClick = { showMessage("개인정보 처리방침 화면 연결 예정") },
-                        )
+                        Navigation(onMessage = ::showMessage)
                     }
                 }
             }
