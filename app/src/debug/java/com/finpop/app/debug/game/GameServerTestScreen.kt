@@ -39,6 +39,7 @@ fun GameServerTestScreen() {
     var animatedPosition by remember { mutableStateOf<Int?>(null) }
     var rolling by remember { mutableStateOf(false) }
     var lastAiAttempt by remember { mutableStateOf<String?>(null) }
+    var lastAiQuizAttempt by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     fun run(action: suspend () -> Unit) {
@@ -145,6 +146,28 @@ fun GameServerTestScreen() {
             }
         }
     }
+    val aiQuiz = aiGame?.optJSONObject("pendingQuiz")
+    LaunchedEffect(showBoard, aiQuiz?.optString("attemptId"), busy, pending?.key) {
+        if (showBoard && aiGame != null && aiQuiz != null && !busy && pending == null &&
+            aiGame.optString("currentPlayerId") == "P2" && aiGame.optString("phase") == "QUIZ_OPEN") {
+            val attempt = aiQuiz.getString("attemptId")
+            if (lastAiQuizAttempt != attempt) {
+                lastAiQuizAttempt = attempt
+                mutate("/v1/games/" + aiGame.getString("gameId") + "/ai/quiz-answers",
+                    JSONObject().put("expectedVersion", aiGame.getInt("stateVersion")).put("attemptId", attempt))
+            }
+        }
+    }
+    fun submitQuiz(choice: Int?, ai: Boolean = false) {
+        val latest = game ?: return
+        val quiz = latest.optJSONObject("pendingQuiz") ?: return
+        if (busy || pending != null || latest.optString("phase") != "QUIZ_OPEN") return
+        val path = if (ai) "/ai/quiz-answers" else if (choice == null) "/quiz-timeouts" else "/quiz-answers"
+        val body = JSONObject().put("expectedVersion", latest.getInt("stateVersion"))
+            .put("attemptId", quiz.getString("attemptId"))
+        if (choice != null) body.put("choiceId", choice)
+        mutate("/v1/games/" + latest.getString("gameId") + path, body)
+    }
     val boardGame = game
     if (showBoard && boardGame != null) {
         GameServerBoardScreen(
@@ -178,6 +201,9 @@ fun GameServerTestScreen() {
                     mutate("/v1/games/" + boardGame.getString("gameId") + "/ai/rolls",
                         JSONObject().put("expectedVersion", boardGame.getInt("stateVersion")))
             },
+            onAnswer = { choice -> submitQuiz(choice) },
+            onTimeout = { submitQuiz(null) },
+            onAiAnswer = { submitQuiz(null, ai = true) },
             onRetry = { pending?.let { change -> if (!busy) run { send(change) } } },
         )
         return
@@ -185,7 +211,7 @@ fun GameServerTestScreen() {
     Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("실제 서버 초기 설정·주사위 테스트", style = MaterialTheme.typography.titleLarge)
-        Text("실제 DB에 테스트 게임이 저장됩니다. AI 이동까지 지원하며 퀴즈 답변 이후 처리는 아직 지원하지 않습니다.")
+        Text("실제 DB에 테스트 게임이 저장됩니다. AI 이동·퀴즈 판정을 지원하며 구매·차례 종료는 아직 지원하지 않습니다.")
         if (token.isBlank()) {
             OutlinedTextField(publicKey, { publicKey = it }, label = { Text("프로젝트 anon 또는 publishable 공개 키") }, enabled = !busy)
             Text("테스트 계정의 access_token을 입력하세요. anon 키나 service_role 키를 사용자 토큰으로 넣지 마세요.")

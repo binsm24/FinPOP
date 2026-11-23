@@ -20,13 +20,14 @@ internal fun GameServerBoardScreen(
     busy: Boolean, canRetry: Boolean, responseText: String, hasDiceResult: Boolean,
     onBack: () -> Unit, onRefresh: () -> Unit, onInitiative: () -> Unit,
     onRoll: () -> Unit, onRetry: () -> Unit, onAiMove: () -> Unit,
+    onAnswer: (Int) -> Unit, onTimeout: () -> Unit, onAiAnswer: () -> Unit,
 ) {
     var details by remember { mutableStateOf<String?>(null) }
     BackHandler { onBack() }
     val phase = game.getString("phase")
     val status = when {
         phase == "INITIATIVE_PENDING" -> "선공 결정 전입니다."
-        phase == "QUIZ_OPEN" -> "퀴즈가 발급됐습니다. 답변 처리는 아직 지원하지 않습니다."
+        phase == "QUIZ_OPEN" -> "퀴즈 판정 대기 중입니다."
         game.optString("currentPlayerId") == "P2" -> "AI 차례입니다. 서버에 이동을 요청합니다."
         phase != "TURN_READY" -> "이동 후 처리 대기: $phase"
         else -> "사용자 차례입니다. 보드 중앙 주사위를 눌러주세요."
@@ -63,16 +64,7 @@ internal fun GameServerBoardScreen(
             )
             Text(responseText.lineSequence().firstOrNull().orEmpty(),
                 Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
-            val quiz = game.optJSONObject("pendingQuiz")
-            if (quiz != null) TextButton(onClick = {
-                val choices = quiz.getJSONArray("choices")
-                details = quiz.getString("question") + "\n\n" +
-                    (0 until choices.length()).joinToString("\n") { index ->
-                        val choice = choices.getJSONObject(index)
-                        "${choice.getInt("id")}. ${choice.getString("text")}"
-                    } + "\n\n제한 시간: " + quiz.getString("deadlineAt") +
-                    "\n답변 API는 아직 연결되지 않았습니다."
-            }) { Text("발급된 퀴즈 확인") }
+            GameServerQuizControls(game, busy || canRetry, onAnswer, onTimeout, onAiAnswer)
         }
     }
     details?.let { text ->

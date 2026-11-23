@@ -113,3 +113,26 @@ test("AI 이동 요청에서도 주사위·참가자 위조 차단",async()=>{
  assert.equal((await f.handler(request("/v1/games/"+gid+"/ai/rolls",{expectedVersion:2,diceValue:6,playerId:"P1"}))).status,400);
  assert.equal(f.calls.length,0);
 });
+
+test("사용자 답변·시간 초과·AI 판정 경로를 서버 연산에 매핑",async()=>{
+ for(const [path,operation] of [["quiz-answers","answer"],["quiz-timeouts","quiz-timeout"],["ai/quiz-answers","ai-answer"]]){
+  const f=fixture();
+  const body={expectedVersion:3,attemptId:key,...(operation==="answer"?{choiceId:2}:{})};
+  const response=await f.handler(request("/v1/games/"+gid+"/"+path,body));
+  assert.equal(response.status,200);
+  assert.equal(JSON.parse(f.calls[1].options.body).p_operation,operation);
+ }
+});
+test("판정 요청의 정답·시간·AI 선택지 위조 차단",async()=>{
+ for(const [path,body] of [
+  ["quiz-answers",{expectedVersion:3,attemptId:key,choiceId:5}],
+  ["quiz-answers",{expectedVersion:3,attemptId:"invalid",choiceId:1}],
+  ["quiz-answers",{expectedVersion:3,attemptId:key,choiceId:1,remainingMillis:20000}],
+  ["ai/quiz-answers",{expectedVersion:3,attemptId:key,choiceId:1}],
+  ["quiz-timeouts",{expectedVersion:3,attemptId:key,correctChoiceId:1}],
+ ]){
+  const f=fixture();
+  assert.equal((await f.handler(request("/v1/games/"+gid+"/"+path,body))).status,400);
+  assert.equal(f.calls.length,0);
+ }
+});

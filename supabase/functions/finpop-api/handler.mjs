@@ -15,12 +15,12 @@ export function createHandler({url, publicKey, serviceKey, fetcher=fetch, uuid=(
       if(request.method==="GET" && pathname==="/v1/game-config") operation="config";
       else if(request.method==="POST" && pathname==="/v1/games") operation="create";
       else{
-        const match=pathname.match(/^\/v1\/games\/([^/]+)(?:\/(initiative|rolls|ai\/rolls))?$/);
+        const match=pathname.match(/^\/v1\/games\/([^/]+)(?:\/(initiative|rolls|ai\/rolls|quiz-answers|quiz-timeouts|ai\/quiz-answers))?$/);
         if(!match) return error(404,"RESOURCE_NOT_FOUND","요청한 API를 찾을 수 없습니다.");
         gameId=match[1];
         if(!UUID.test(gameId)) return error(400,"INVALID_REQUEST","gameId는 UUID여야 합니다.");
         if(request.method==="GET" && !match[2]) operation="get";
-        else if(request.method==="POST" && match[2]) operation=match[2]==="rolls"?"roll":match[2]==="ai/rolls"?"ai-roll":"initiative";
+        else if(request.method==="POST" && match[2]) operation=({"initiative":"initiative","rolls":"roll","ai/rolls":"ai-roll","quiz-answers":"answer","quiz-timeouts":"quiz-timeout","ai/quiz-answers":"ai-answer"})[match[2]];
         else return error(405,"METHOD_NOT_ALLOWED","지원하지 않는 메서드입니다.");
       }
       const authorization=request.headers.get("Authorization");
@@ -47,7 +47,9 @@ export function createHandler({url, publicKey, serviceKey, fetcher=fetch, uuid=(
           text+=decoder.decode();
         }
         try{body=JSON.parse(text);}catch{return error(400,"INVALID_REQUEST","올바른 JSON이 아닙니다.");}
-        const allowed=operation==="create"?["mode","characterId"]:["expectedVersion"];
+        const quizOperation=["answer","quiz-timeout","ai-answer"].includes(operation);
+        const allowed=operation==="create"?["mode","characterId"]:
+          quizOperation?["expectedVersion","attemptId",...(operation==="answer"?["choiceId"]:[])]:["expectedVersion"];
         if(!body || Array.isArray(body) || typeof body!=="object" ||
            Object.keys(body).some(k=>!allowed.includes(k)))
           return error(400,"INVALID_REQUEST","요청 필드를 확인해 주세요.");
@@ -56,6 +58,11 @@ export function createHandler({url, publicKey, serviceKey, fetcher=fetch, uuid=(
             return error(400,"INVALID_REQUEST","AI 모드와 characterId가 필요합니다.");
         }else if(!Number.isSafeInteger(body.expectedVersion)||body.expectedVersion<0)
           return error(400,"INVALID_REQUEST","expectedVersion은 0 이상의 정수여야 합니다.");
+      }
+      if(["answer","quiz-timeout","ai-answer"].includes(operation)){
+        if(typeof body.attemptId!=="string" || !UUID.test(body.attemptId) ||
+           (operation==="answer" && (!Number.isInteger(body.choiceId)||body.choiceId<1||body.choiceId>4)))
+          return error(400,"INVALID_REQUEST","문항 ID와 선택지를 확인해 주세요.");
       }
       // 토큰 내용을 단순 해독해서 신뢰하지 않습니다. 요청 본문에서 userId도 받지 않습니다.
       const auth=await fetcher(base+"/auth/v1/user",{
