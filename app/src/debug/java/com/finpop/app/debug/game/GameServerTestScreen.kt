@@ -15,6 +15,8 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
+import com.finpop.app.feature.game.GameBoardPlayerId
+import kotlinx.coroutines.delay
 
 private const val SERVER = "https://xzxbhbdartmcyvoslwsl.supabase.co"
 private data class PendingRequest(val path: String, val body: String, val key: String)
@@ -30,6 +32,12 @@ fun GameServerTestScreen() {
     var pending by remember { mutableStateOf<PendingRequest?>(null) }
     var output by remember { mutableStateOf("테스트 인증 정보를 설정한 뒤 게임을 생성하거나 기존 게임 ID를 입력하세요.") }
     var busy by remember { mutableStateOf(false) }
+    var showBoard by remember { mutableStateOf(false) }
+    var lastDice by remember { mutableIntStateOf(1) }
+    var hasDiceResult by remember { mutableStateOf(false) }
+    var lastRoller by remember { mutableStateOf(GameBoardPlayerId.P1) }
+    var animatedPosition by remember { mutableStateOf<Int?>(null) }
+    var rolling by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun run(action: suspend () -> Unit) {
@@ -71,6 +79,11 @@ fun GameServerTestScreen() {
             val data = response.optJSONObject("data")
             val snapshot = data?.optJSONObject("game") ?: data
             if (snapshot?.has("gameId") == true) {
+                if (game?.optString("gameId") != snapshot.getString("gameId")) {
+                    lastDice = 1
+                    hasDiceResult = false
+                    animatedPosition = null
+                }
                 game = snapshot
                 gameId = snapshot.getString("gameId")
             }
@@ -78,10 +91,36 @@ fun GameServerTestScreen() {
     }
 
     suspend fun send(change: PendingRequest) {
-        val (status, response) = request("/functions/v1/finpop-api" + change.path, "POST", change.body, change.key)
-        // 응답 유실 시 동일한 본문과 요청 키로만 재시도합니다.
-        accept(status, response)
-        pending = null
+        rolling = change.path.endsWith("/rolls")
+        try {
+            val (status, response) = request("/functions/v1/finpop-api" + change.path, "POST", change.body, change.key)
+            val data = response.optJSONObject("data")
+            val path = if (status in 200..299) data?.optJSONArray("movementPath") else null
+            if (path != null) {
+                // 재시도 응답도 서버가 확정한 값과 경로만 표시합니다.
+                val players = game?.optJSONArray("players")
+                animatedPosition = players?.let { list ->
+                    (0 until list.length()).map { list.getJSONObject(it) }
+                        .firstOrNull { it.optString("playerId") == "P1" }?.getInt("position")
+                }
+                lastDice = requireNotNull(data).getInt("diceValue")
+                hasDiceResult = true
+                lastRoller = GameBoardPlayerId.P1
+            }
+            accept(status, response)
+            // HTTP 응답이 확인되기 전에는 같은 요청 키를 유지합니다.
+            pending = null
+            rolling = false
+            if (path != null) {
+                for (index in 0 until path.length()) {
+                    animatedPosition = path.getInt(index)
+                    delay(180)
+                }
+            }
+        } finally {
+            rolling = false
+            animatedPosition = null
+        }
     }
 
     fun mutate(path: String, body: JSONObject) {
@@ -90,6 +129,37 @@ fun GameServerTestScreen() {
         run { send(change) }
     }
 
+    val boardGame = game
+    if (showBoard && boardGame != null) {
+        GameServerBoardScreen(
+            game = boardGame,
+            state = boardGame.toServerBoardState(lastDice, lastRoller, rolling,
+                busy || pending != null, animatedPosition),
+            busy = busy, canRetry = pending != null, responseText = output,
+            hasDiceResult = hasDiceResult,
+            onBack = { showBoard = false },
+            onRefresh = {
+                if (!busy && pending == null) run {
+                    val (status, response) = request(
+                        "/functions/v1/finpop-api/v1/games/" + boardGame.getString("gameId"), "GET", null)
+                    accept(status, response)
+                }
+            },
+            onInitiative = {
+                if (!busy && pending == null && boardGame.optString("phase") == "INITIATIVE_PENDING")
+                    mutate("/v1/games/" + boardGame.getString("gameId") + "/initiative",
+                        JSONObject().put("expectedVersion", boardGame.getInt("stateVersion")))
+            },
+            onRoll = {
+                if (boardGame.toServerBoardState(lastDice, lastRoller, false,
+                        busy || pending != null, null).canRollDice)
+                    mutate("/v1/games/" + boardGame.getString("gameId") + "/rolls",
+                        JSONObject().put("expectedVersion", boardGame.getInt("stateVersion")))
+            },
+            onRetry = { pending?.let { change -> if (!busy) run { send(change) } } },
+        )
+        return
+    }
     Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("실제 서버 초기 설정·주사위 테스트", style = MaterialTheme.typography.titleLarge)
@@ -119,6 +189,7 @@ fun GameServerTestScreen() {
             }) { Text("게임 상태 조회") }
             val current = game
             if (current != null) {
+                Button(enabled = !busy, onClick = { showBoard = true }) { Text("서버 상태로 보드 열기") }
                 val phase = current.optString("phase")
                 Text("상태: $phase · 현재 차례: " + current.optString("currentPlayerId"))
                 Button(enabled = !busy && pending == null && phase == "INITIATIVE_PENDING", onClick = {
