@@ -49,5 +49,21 @@ internal fun JSONObject.toServerBoardState(
 }
 
 /** AI 요청도 현재 AI 차례이며 이동 가능한 상태일 때만 보냅니다. */
-internal fun canRequestAiMovement(phase: String, playerId: String?, blocked: Boolean): Boolean =
-    phase == "TURN_READY" && playerId == "P2" && !blocked
+internal fun canRequestAiMovement(phase: String, playerId: String?, blocked: Boolean, islandWait: Int = 0): Boolean =
+    phase == "TURN_READY" && playerId == "P2" && !blocked && islandWait == 0
+internal fun JSONObject.islandWaitFor(playerId: String): Int {
+    val players = getJSONArray("players")
+    return (0 until players.length()).map { players.getJSONObject(it) }
+        .single { it.getString("playerId") == playerId }.getInt("islandWaitTurns")
+}
+
+/** AI의 각 단계는 별도 서버 요청으로 확정하고 상태가 변하면 다음 요청을 선택합니다. */
+internal fun aiFollowupPath(phase: String, playerId: String?, islandWait: Int): String? {
+    if (playerId != "P2") return null
+    return when {
+        phase == "PURCHASE_PENDING" -> "/ai/purchases"
+        phase == "TURN_REVIEW" -> "/ai/turn-completions"
+        phase == "TURN_READY" && islandWait > 0 -> "/ai/island-skips"
+        else -> null
+    }
+}

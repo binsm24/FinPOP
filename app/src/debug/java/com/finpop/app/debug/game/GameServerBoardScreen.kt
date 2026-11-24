@@ -18,6 +18,8 @@ import org.json.JSONObject
 internal fun GameServerBoardScreen(
     game: JSONObject, state: GameBoardUiState,
     busy: Boolean, canRetry: Boolean, responseText: String, hasDiceResult: Boolean,
+    recentQuizResult: JSONObject?, onPurchaseAnimationFinished: (String) -> Unit,
+    onPurchase: (String) -> Unit, onComplete: () -> Unit, onSkipIsland: () -> Unit, onAiFollowup: () -> Unit,
     onBack: () -> Unit, onRefresh: () -> Unit, onInitiative: () -> Unit,
     onRoll: () -> Unit, onRetry: () -> Unit, onAiMove: () -> Unit,
     onAnswer: (Int) -> Unit, onTimeout: () -> Unit, onAiAnswer: () -> Unit,
@@ -26,7 +28,10 @@ internal fun GameServerBoardScreen(
     BackHandler { onBack() }
     val phase = game.getString("phase")
     val status = when {
+        phase == "FINISHED" -> "게임이 종료됐습니다. 계정 보상은 아직 지급하지 않습니다."
         phase == "INITIATIVE_PENDING" -> "선공 결정 전입니다."
+        phase == "TURN_READY" && game.optString("currentPlayerId") in listOf("P1", "P2") &&
+            game.islandWaitFor(game.optString("currentPlayerId")) > 0 -> "무인도 대기입니다. 이번 차례는 이동하지 않습니다."
         phase == "QUIZ_OPEN" -> "퀴즈 판정 대기 중입니다."
         game.optString("currentPlayerId") == "P2" -> "AI 차례입니다. 서버에 이동을 요청합니다."
         phase != "TURN_READY" -> "이동 후 처리 대기: $phase"
@@ -49,12 +54,14 @@ internal fun GameServerBoardScreen(
             if (canRetry && !busy) {
                 Button(onClick = onRetry, modifier = Modifier.padding(horizontal = 12.dp)) { Text("같은 요청 재시도") }
             }
-            if (canRequestAiMovement(phase, game.optString("currentPlayerId"), busy || canRetry)) {
+            if (canRequestAiMovement(phase, game.optString("currentPlayerId"), busy || canRetry, game.islandWaitFor("P2"))) {
                 TextButton(onClick = onAiMove) { Text("AI 이동 요청 다시 시도") }
             }
+            GameServerTurnControls(game, busy || canRetry, onPurchase, onComplete, onSkipIsland, onAiFollowup)
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             MainGameBoardContent(
                 state = state,
+                onPurchaseAnimationFinished = onPurchaseAnimationFinished,
                 onRollDice = { if (state.canRollDice) onRoll() },
                 onTileClick = { boardId ->
                     val tile = GameRules.tiles.single { it.tileId == boardTileToServer(boardId) }
@@ -64,7 +71,7 @@ internal fun GameServerBoardScreen(
             )
             Text(responseText.lineSequence().firstOrNull().orEmpty(),
                 Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
-            GameServerQuizControls(game, busy || canRetry, onAnswer, onTimeout, onAiAnswer)
+            GameServerQuizControls(game, busy || canRetry, onAnswer, onTimeout, onAiAnswer, recentQuizResult)
         }
     }
     details?.let { text ->

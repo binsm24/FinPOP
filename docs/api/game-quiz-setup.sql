@@ -488,6 +488,95 @@ revoke all on function finpop_private.game_quiz_result(uuid),finpop_private.quiz
 grant execute on function finpop_private.game_quiz_result(uuid),finpop_private.quiz_ai_choice(integer),
  finpop_private.resolve_game_quiz(uuid,text,uuid,integer,boolean,boolean) to service_role;
 
+-- 구매와 차례 종료는 인증된 RPC가 게임 행을 잠근 뒤 호출합니다.
+create or replace function finpop_private.purchase_game_tile(
+ p_game_id uuid,p_actor text,p_tile integer,p_action text,p_ai boolean
+) returns jsonb language plpgsql security invoker set search_path='' as $$
+declare
+ g public.game_sessions%rowtype;p public.game_players%rowtype;
+ v_owner text;v_price integer;v_action text;v_event uuid:=gen_random_uuid();
+begin
+ select * into g from public.game_sessions where id=p_game_id;
+ if g.phase<>'PURCHASE_PENDING' or g.current_player_id is distinct from p_actor
+  or g.pending_purchase is null or (g.pending_purchase->>'tileId')::integer is distinct from p_tile then
+  perform finpop_private.game_fail('PURCHASE_NOT_AVAILABLE');
+ end if;
+ if not exists(select 1 from public.game_quiz_attempts where game_id=g.id and turn_id=g.current_turn_id
+  and player_id=p_actor and tile_id=p_tile and resolution='CORRECT') then
+  perform finpop_private.game_fail('PURCHASE_NOT_AVAILABLE');
+ end if;
+ select * into p from public.game_players where game_id=g.id and player_id=p_actor for update;
+ select owner_player_id into v_owner from public.game_tiles where game_id=g.id and tile_id=p_tile for update;
+ if not found or v_owner is not null or p_tile in (0,3,7,10) then
+  perform finpop_private.game_fail('PURCHASE_NOT_AVAILABLE');
+ end if;
+ select (t->>'price')::integer into v_price
+  from jsonb_array_elements(finpop_private.game_config()->'tiles') t where (t->>'tileId')::integer=p_tile;
+ if v_price is null or v_price<=0 then perform finpop_private.game_fail('CONFIG_UNAVAILABLE'); end if;
+ v_action:=case when p_ai then case when p.game_gold>=v_price then 'BUY' else 'PASS' end else p_action end;
+ if v_action not in ('BUY','PASS') or v_action is null then perform finpop_private.game_fail('INVALID_REQUEST'); end if;
+ if v_action='BUY' then
+  if p.game_gold<v_price then perform finpop_private.game_fail('INSUFFICIENT_GOLD'); end if;
+  update public.game_players set game_gold=game_gold-v_price where game_id=g.id and player_id=p_actor;
+  update public.game_tiles set owner_player_id=p_actor where game_id=g.id and tile_id=p_tile;
+ end if;
+ update public.game_sessions set phase='TURN_REVIEW',pending_purchase=null,
+  state_version=state_version+1,updated_at=clock_timestamp() where id=g.id;
+ return jsonb_build_object('eventId',v_event,'playerId',p_actor,'tileId',p_tile,'action',v_action,
+  'amount',case when v_action='BUY' then v_price else 0 end);
+end;
+$$;
+
+create or replace function finpop_private.complete_game_turn(
+ p_game_id uuid,p_actor text,p_turn uuid,p_skip_island boolean
+) returns jsonb language plpgsql security invoker set search_path='' as $$
+declare
+ g public.game_sessions%rowtype;p public.game_players%rowtype;
+ v_closed uuid;v_next text;v_next_turn uuid;v_finished boolean;v_now timestamptz:=clock_timestamp();
+begin
+ select * into g from public.game_sessions where id=p_game_id;
+ if g.current_player_id is distinct from p_actor or g.current_turn_id is distinct from p_turn
+  or p_turn is null then perform finpop_private.game_fail('TURN_ALREADY_COMPLETED'); end if;
+ if g.pending_purchase is not null or g.pending_event is not null or exists(
+  select 1 from public.game_quiz_attempts where game_id=g.id and resolved_at is null) then
+  perform finpop_private.game_fail('TURN_NOT_READY_TO_COMPLETE');
+ end if;
+ select * into p from public.game_players where game_id=g.id and player_id=p_actor for update;
+ if not found or p.remaining_turns<=0 then perform finpop_private.game_fail('TURN_ALREADY_COMPLETED'); end if;
+ if p_skip_island then
+  if g.phase<>'TURN_READY' or p.island_wait_turns<>1 or exists(
+   select 1 from public.game_turns where id=p_turn and dice_value is not null) then
+   perform finpop_private.game_fail('INVALID_PHASE');
+  end if;
+ elsif g.phase<>'TURN_REVIEW' then perform finpop_private.game_fail('TURN_NOT_READY_TO_COMPLETE');
+ end if;
+ update public.game_turns set completed_at=v_now where id=p_turn and game_id=g.id
+  and player_id=p_actor and completed_at is null returning id into v_closed;
+ if not found then perform finpop_private.game_fail('TURN_ALREADY_COMPLETED'); end if;
+ update public.game_players set remaining_turns=remaining_turns-1,
+  island_wait_turns=case when p_skip_island then 0 else island_wait_turns end
+  where game_id=g.id and player_id=p_actor;
+ select not exists(select 1 from public.game_players where game_id=g.id and remaining_turns>0) into v_finished;
+ if not v_finished then
+  select player_id into v_next from public.game_players where game_id=g.id and remaining_turns>0
+   order by case when player_id<>p_actor then 0 else 1 end limit 1;
+  insert into public.game_turns(game_id,player_id) values(g.id,v_next) returning id into v_next_turn;
+ end if;
+ update public.game_sessions set status=case when v_finished then 'FINISHED' else 'ACTIVE' end,
+  phase=case when v_finished then 'FINISHED' else 'TURN_READY' end,
+  current_player_id=v_next,current_turn_id=v_next_turn,pending_purchase=null,pending_event=null,
+  finished_at=case when v_finished then v_now else null end,
+  state_version=state_version+1,updated_at=v_now where id=g.id;
+ -- 계정 보상·완료 횟수는 별도 구현 전까지 갱신하지 않습니다.
+ return jsonb_build_object('completedPlayerId',p_actor,'completedTurnId',p_turn,
+  'nextPlayerId',v_next,'skippedIsland',p_skip_island,'finished',v_finished);
+end;
+$$;
+revoke all on function finpop_private.purchase_game_tile(uuid,text,integer,text,boolean),
+ finpop_private.complete_game_turn(uuid,text,uuid,boolean) from public,anon,authenticated;
+grant execute on function finpop_private.purchase_game_tile(uuid,text,integer,text,boolean),
+ finpop_private.complete_game_turn(uuid,text,uuid,boolean) to service_role;
+
 create function finpop_private.game_snapshot(p_game_id uuid) returns jsonb
 language sql stable security invoker set search_path='' as $$
 select jsonb_build_object(
@@ -534,7 +623,7 @@ declare
  v_meta jsonb := jsonb_build_object('serverTime',clock_timestamp(),'requestId',gen_random_uuid());
  v_fingerprint jsonb := jsonb_build_object('operation',p_operation,'gameId',p_game_id,'body',p_body);
  v_data jsonb; v_envelope jsonb; v_status integer := 200; v_code text;
- v_mutation boolean := p_operation in ('create','initiative','roll','ai-roll','answer','quiz-timeout','ai-answer');
+ v_mutation boolean := p_operation in ('create','initiative','roll','ai-roll','answer','quiz-timeout','ai-answer','purchase','ai-purchase','complete-turn','ai-complete-turn','island-skip','ai-island-skip');
  v_level integer; v_stage integer; v_user_level integer; v_completed integer;
  v_a integer; v_b integer; v_dice integer; v_position integer; v_bonus integer;
  v_path jsonb; v_rolls jsonb := '[]'::jsonb; v_events jsonb := '[]'::jsonb;
@@ -596,7 +685,7 @@ begin
        (v_game_id,'P1',false,p_body->>'characterId',v_level),(v_game_id,'P2',true,'CHEESE',1);
      insert into public.game_tiles(game_id,tile_id) select v_game_id,generate_series(0,13);
      v_data:=finpop_private.game_snapshot(v_game_id);
-   elsif p_operation in ('get','initiative','roll','ai-roll','answer','quiz-timeout','ai-answer') then
+   elsif p_operation in ('get','initiative','roll','ai-roll','answer','quiz-timeout','ai-answer','purchase','ai-purchase','complete-turn','ai-complete-turn','island-skip','ai-island-skip') then
      if p_game_id is null then perform finpop_private.game_fail('INVALID_REQUEST'); end if;
      select * into g from public.game_sessions where id=p_game_id for update;
      if not found then perform finpop_private.game_fail('RESOURCE_NOT_FOUND'); end if;
@@ -608,6 +697,10 @@ begin
      else
        v_allowed:=case when p_operation='answer' then array['expectedVersion','attemptId','choiceId']
          when p_operation in ('quiz-timeout','ai-answer') then array['expectedVersion','attemptId']
+         when p_operation='purchase' then array['expectedVersion','tileId','action']
+         when p_operation='ai-purchase' then array['expectedVersion','tileId']
+         when p_operation in ('complete-turn','ai-complete-turn','island-skip','ai-island-skip')
+           then array['expectedVersion','turnId']
          else array['expectedVersion'] end;
        if (p_body - v_allowed)<>'{}'::jsonb
          or jsonb_typeof(p_body->'expectedVersion') is distinct from 'number'
@@ -628,6 +721,25 @@ begin
          update public.game_sessions set current_player_id=v_first,current_turn_id=v_turn,phase='TURN_READY',
            state_version=state_version+1,updated_at=clock_timestamp() where id=g.id;
          v_data:=jsonb_build_object('rolls',v_rolls,'firstPlayerId',v_first,'game',finpop_private.game_snapshot(g.id));
+       elsif p_operation in ('purchase','ai-purchase') then
+         v_actor:=case when p_operation='ai-purchase' then 'P2' else 'P1' end;
+         if g.current_player_id is distinct from v_actor then perform finpop_private.game_fail('NOT_YOUR_TURN'); end if;
+         if jsonb_typeof(p_body->'tileId') is distinct from 'number' or (p_body->>'tileId') !~ '^([0-9]|1[0-3])$'
+          then perform finpop_private.game_fail('INVALID_REQUEST'); end if;
+         if p_operation='purchase' and (jsonb_typeof(p_body->'action') is distinct from 'string'
+           or p_body->>'action' not in ('BUY','PASS')) then perform finpop_private.game_fail('INVALID_REQUEST'); end if;
+         v_result:=finpop_private.purchase_game_tile(g.id,v_actor,(p_body->>'tileId')::integer,
+           p_body->>'action',p_operation='ai-purchase');
+         v_data:=jsonb_build_object('purchaseEvent',v_result,'game',finpop_private.game_snapshot(g.id));
+       elsif p_operation in ('complete-turn','ai-complete-turn','island-skip','ai-island-skip') then
+         v_actor:=case when p_operation in ('ai-complete-turn','ai-island-skip') then 'P2' else 'P1' end;
+         if g.current_player_id is distinct from v_actor then perform finpop_private.game_fail('NOT_YOUR_TURN'); end if;
+         if jsonb_typeof(p_body->'turnId') is distinct from 'string'
+           or (p_body->>'turnId') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+           then perform finpop_private.game_fail('INVALID_REQUEST'); end if;
+         v_result:=finpop_private.complete_game_turn(g.id,v_actor,(p_body->>'turnId')::uuid,
+           p_operation in ('island-skip','ai-island-skip'));
+         v_data:=jsonb_build_object('turnResult',v_result,'game',finpop_private.game_snapshot(g.id));
        elsif p_operation in ('answer','quiz-timeout','ai-answer') then
          v_actor:=case when p_operation='ai-answer' then 'P2' else 'P1' end;
          if g.current_player_id is distinct from v_actor then perform finpop_private.game_fail('NOT_YOUR_TURN'); end if;
@@ -718,6 +830,7 @@ begin
    v_envelope:=jsonb_build_object('error',jsonb_build_object('code',v_code,'message',
      case v_code when 'ACTIVE_GAME_EXISTS' then '진행 중인 게임을 이어하거나 포기해 주세요.'
        when 'CHARACTER_LOCKED' then '아직 해금되지 않은 캐릭터입니다.'
+       when 'INSUFFICIENT_GOLD' then '칸을 구매할 G가 부족합니다. 패스를 선택해 주세요.'
        when 'STATE_CONFLICT' then '최신 게임 상태를 확인해 주세요.'
        when 'QUIZ_POOL_EXHAUSTED' then '해당 주제의 승인된 미출제 문항이 부족합니다.'
        when 'ABILITY_UNAVAILABLE' then '이 캐릭터의 서버 능력 처리는 아직 연결하지 않았습니다.'

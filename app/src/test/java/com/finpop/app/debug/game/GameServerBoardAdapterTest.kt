@@ -41,4 +41,15 @@ class GameServerBoardAdapterTest {
         assertFalse(canRequestAiMovement("QUIZ_OPEN", "P2", false))
         assertFalse(canRequestAiMovement("TURN_READY", "P2", true))
     }
+
+    @Test fun aiFollowupsRespectPhaseAndIslandWait() {
+        assertEquals("/ai/purchases", aiFollowupPath("PURCHASE_PENDING", "P2", 0))
+        assertEquals("/ai/turn-completions", aiFollowupPath("TURN_REVIEW", "P2", 0))
+        assertEquals("/ai/island-skips", aiFollowupPath("TURN_READY", "P2", 1))
+        assertNull(aiFollowupPath("TURN_READY", "P2", 0))
+        assertNull(aiFollowupPath("QUIZ_OPEN", "P2", 0))
+        assertNull(aiFollowupPath("TURN_REVIEW", "P1", 0))
+        assertNull(aiFollowupPath("FINISHED", null, 0))
+        assertFalse(canRequestAiMovement("TURN_READY", "P2", false, 1))
+    }
 }

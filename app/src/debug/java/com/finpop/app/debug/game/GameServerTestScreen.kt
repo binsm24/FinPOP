@@ -16,6 +16,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 import com.finpop.app.feature.game.GameBoardPlayerId
+import com.finpop.app.feature.game.TilePurchaseUiEvent
 import kotlinx.coroutines.delay
 
 private const val SERVER = "https://xzxbhbdartmcyvoslwsl.supabase.co"
@@ -40,6 +41,10 @@ fun GameServerTestScreen() {
     var rolling by remember { mutableStateOf(false) }
     var lastAiAttempt by remember { mutableStateOf<String?>(null) }
     var lastAiQuizAttempt by remember { mutableStateOf<String?>(null) }
+    var lastFollowup by remember { mutableStateOf<String?>(null) }
+    var recentQuizResult by remember { mutableStateOf<JSONObject?>(null) }
+    var purchaseAnimations by remember { mutableStateOf<List<TilePurchaseUiEvent>>(emptyList()) }
+    var seenPurchases by remember { mutableStateOf<Set<String>>(emptySet()) }
     val scope = rememberCoroutineScope()
 
     fun run(action: suspend () -> Unit) {
@@ -84,7 +89,20 @@ fun GameServerTestScreen() {
                 if (game?.optString("gameId") != snapshot.getString("gameId")) {
                     lastDice = 1
                     hasDiceResult = false
+                    recentQuizResult = null
+                    purchaseAnimations = emptyList()
+                    seenPurchases = emptySet()
                     animatedPosition = null
+                }
+                snapshot.optJSONObject("lastQuizResult")?.let { recentQuizResult = it }
+                data?.optJSONObject("purchaseEvent")?.let { event ->
+                    val eventId = event.getString("eventId")
+                    if (event.optString("action") == "BUY" && eventId !in seenPurchases) {
+                        seenPurchases = seenPurchases + eventId
+                        purchaseAnimations = purchaseAnimations + TilePurchaseUiEvent(eventId,
+                            serverTileToBoard(event.getInt("tileId")),
+                            if (event.getString("playerId") == "P2") GameBoardPlayerId.P2 else GameBoardPlayerId.P1)
+                    }
                 }
                 game = snapshot
                 gameId = snapshot.getString("gameId")
@@ -133,16 +151,43 @@ fun GameServerTestScreen() {
         run { send(change) }
     }
 
+    fun submitBoardAction(path: String, action: String? = null) {
+        val latest = game ?: return
+        if (busy || pending != null) return
+        val body = JSONObject().put("expectedVersion", latest.getInt("stateVersion"))
+        if (path.endsWith("/purchases")) {
+            val purchase = latest.optJSONObject("pendingPurchase") ?: return
+            body.put("tileId", purchase.getInt("tileId"))
+            if (action != null) body.put("action", action)
+        } else {
+            if (latest.isNull("currentTurnId")) return
+            body.put("turnId", latest.getString("currentTurnId"))
+        }
+        mutate("/v1/games/" + latest.getString("gameId") + path, body)
+    }
+
     // 게임·버전별 자동 요청은 한 번만 보냅니다. 오류 이후에는 명시적으로 재시도합니다.
     val aiGame = game
     LaunchedEffect(showBoard, aiGame?.optString("gameId"), aiGame?.optInt("stateVersion"), busy, pending?.key) {
         if (showBoard && aiGame != null &&
-            canRequestAiMovement(aiGame.optString("phase"), aiGame.optString("currentPlayerId"), busy || pending != null)) {
+            canRequestAiMovement(aiGame.optString("phase"), aiGame.optString("currentPlayerId"), busy || pending != null, aiGame.islandWaitFor("P2"))) {
             val attempt = aiGame.getString("gameId") + ":" + aiGame.getInt("stateVersion")
             if (lastAiAttempt != attempt) {
                 lastAiAttempt = attempt
                 mutate("/v1/games/" + aiGame.getString("gameId") + "/ai/rolls",
                     JSONObject().put("expectedVersion", aiGame.getInt("stateVersion")))
+            }
+        }
+    }
+    val followup = aiGame?.let { aiFollowupPath(it.optString("phase"),
+        it.optString("currentPlayerId"), it.islandWaitFor("P2")) }
+    LaunchedEffect(showBoard, aiGame?.optString("gameId"), aiGame?.optInt("stateVersion"), followup, busy, pending?.key) {
+        if (showBoard && aiGame != null && followup != null && !busy && pending == null) {
+            val key = aiGame.getString("gameId") + ":" + aiGame.getInt("stateVersion") + followup
+            if (lastFollowup != key) {
+                delay(1000)
+                lastFollowup = key
+                submitBoardAction(followup)
             }
         }
     }
@@ -173,9 +218,22 @@ fun GameServerTestScreen() {
         GameServerBoardScreen(
             game = boardGame,
             state = boardGame.toServerBoardState(lastDice, lastRoller, rolling,
-                busy || pending != null, animatedPosition),
+                busy || pending != null, animatedPosition).copy(pendingPurchases = purchaseAnimations),
             busy = busy, canRetry = pending != null, responseText = output,
-            hasDiceResult = hasDiceResult,
+            hasDiceResult = hasDiceResult, recentQuizResult = recentQuizResult,
+            onPurchaseAnimationFinished = { id ->
+                purchaseAnimations = purchaseAnimations.filterNot { it.eventId == id }
+            },
+            onPurchase = { action -> submitBoardAction("/purchases", action) },
+            onComplete = {
+                submitBoardAction(if (boardGame.optString("currentPlayerId") == "P2")
+                    "/ai/turn-completions" else "/turn-completions")
+            },
+            onSkipIsland = {
+                submitBoardAction(if (boardGame.optString("currentPlayerId") == "P2")
+                    "/ai/island-skips" else "/island-skips")
+            },
+            onAiFollowup = { followup?.let { submitBoardAction(it) } },
             onBack = { showBoard = false },
             onRefresh = {
                 if (!busy && pending == null) run {
@@ -197,7 +255,7 @@ fun GameServerTestScreen() {
             },
             onAiMove = {
                 if (canRequestAiMovement(boardGame.optString("phase"),
-                        boardGame.optString("currentPlayerId"), busy || pending != null))
+                        boardGame.optString("currentPlayerId"), busy || pending != null, boardGame.islandWaitFor("P2")))
                     mutate("/v1/games/" + boardGame.getString("gameId") + "/ai/rolls",
                         JSONObject().put("expectedVersion", boardGame.getInt("stateVersion")))
             },
@@ -211,7 +269,7 @@ fun GameServerTestScreen() {
     Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("실제 서버 초기 설정·주사위 테스트", style = MaterialTheme.typography.titleLarge)
-        Text("실제 DB에 테스트 게임이 저장됩니다. AI 이동·퀴즈 판정을 지원하며 구매·차례 종료는 아직 지원하지 않습니다.")
+        Text("실제 DB에 테스트 게임이 저장됩니다. 구매·차례 종료와 AI 한 차례를 지원합니다. 황금열쇠·최종 계정 보상은 아직 지원하지 않습니다.")
         if (token.isBlank()) {
             OutlinedTextField(publicKey, { publicKey = it }, label = { Text("프로젝트 anon 또는 publishable 공개 키") }, enabled = !busy)
             Text("테스트 계정의 access_token을 입력하세요. anon 키나 service_role 키를 사용자 토큰으로 넣지 마세요.")

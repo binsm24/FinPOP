@@ -16,7 +16,7 @@ import kotlin.math.ceil
 @Composable
 internal fun GameServerQuizControls(
     game: JSONObject, blocked: Boolean,
-    onAnswer: (Int) -> Unit, onTimeout: () -> Unit, onAiAnswer: () -> Unit,
+    onAnswer: (Int) -> Unit, onTimeout: () -> Unit, onAiAnswer: () -> Unit, recentResult: JSONObject?,
 ) {
     val quiz = game.optJSONObject("pendingQuiz")
     val attempt = quiz?.optString("attemptId")
@@ -72,7 +72,7 @@ internal fun GameServerQuizControls(
             confirmButton = { TextButton(onClick = { showQuiz = false }) { Text("보드로 돌아가기") } },
         )
     }
-    val result = game.optJSONObject("lastQuizResult")
+    val result = game.optJSONObject("lastQuizResult") ?: if (quiz == null) recentResult else null
     val resultAttempt = result?.optString("attemptId")
     var showResult by remember(resultAttempt) { mutableStateOf(result != null) }
     if (result != null) {
@@ -93,8 +93,8 @@ internal fun GameServerQuizControls(
                     Text("정답: ${result.getInt("correctChoiceId")}번")
                     Text(result.getString("explanation"))
                     Text(if (game.optString("phase") == "PURCHASE_PENDING")
-                        "구매 선택 대기입니다. 구매·패스 API는 다음 단계에서 연결합니다."
-                    else "정산이 필요한 경우 잔액에 반영됐습니다. 차례 종료는 다음 단계에서 연결합니다.")
+                        "구매 선택 대기입니다. 보드에서 구매 또는 패스를 선택하세요."
+                    else "정산이 필요한 경우 잔액에 반영됐습니다. 사용자 차례는 차례 종료 버튼으로 마칩니다.")
                 }
             },
             confirmButton = { TextButton(onClick = { showResult = false }) { Text("닫기") } })

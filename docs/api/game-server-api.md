@@ -10,7 +10,7 @@
 - supabase/functions/finpop-api/index.ts: Supabase Edge Function 진입점.
 - supabase/functions/finpop-api/handler.mjs: Auth 검증과 HTTP 요청·응답 처리.
 - tools/db-schema/validate-rpc.mjs: 기본 스키마·문항 검수·RPC 통합 검증.
-- tools/db-schema/handler.test.mjs: 인증·HTTP 요청·배포 경로 검증 22개.
+- tools/db-schema/handler.test.mjs: 인증·HTTP 요청·배포 경로 검증 24개.
 
 서버 파일은 Android app 모듈과 다른 런타임입니다.
 Android debug 전용 GameServerTestScreen에서 HTTP로 직접 호출합니다. 팀원 MainGameBoardContent에 서버 상태·주사위 콜백을 연결했습니다. 공통 GameRepository의 원격 구현은 후속 작업입니다.
@@ -26,6 +26,12 @@ DB 함수 SQL은 docs/api에 보관합니다. game-quiz-setup.sql과 basic-finan
 | POST | /v1/games | 보유 캐릭터·레벨·완료 횟수 검증, 양측 700G·7턴 생성 |
 | GET | /v1/games/{gameId} | 본인 게임 상태 조회 |
 | POST | /v1/games/{gameId}/initiative | 동률 재추첨·선공·현재 차례 생성 |
+| POST | /v1/games/{gameId}/purchases | 사용자 구매·패스 |
+| POST | /v1/games/{gameId}/ai/purchases | AI 구매·패스 결정 |
+| POST | /v1/games/{gameId}/turn-completions | 사용자 차례 종료 |
+| POST | /v1/games/{gameId}/ai/turn-completions | AI 차례 종료 |
+| POST | /v1/games/{gameId}/island-skips | 사용자 무인도 대기 |
+| POST | /v1/games/{gameId}/ai/island-skips | AI 무인도 대기 |
 | POST | /v1/games/{gameId}/quiz-answers | 사용자 선택지 서버 판정 |
 | POST | /v1/games/{gameId}/quiz-timeouts | 서버 기한 경과 확인·시간 초과 판정 |
 | POST | /v1/games/{gameId}/ai/quiz-answers | AI 선택·판정 |
@@ -62,7 +68,7 @@ sb_secret 형태로 전환할 때는 서비스 인증 헤더 방식을 별도로
 학습 단계는 1 + floor(completed_game_count / 2)로 생성 시 고정합니다.
 AI는 CHEESE Lv.1로 시작합니다. 계정 wallet_gold는 게임 생성 시 차감하지 않습니다.
 치즈 이동 능력은 Lv.1~5에 30/35/40/45/50G이며, 출발 통과·도착은 별도 200G입니다.
-이동할 때 남은 턴은 차감하지 않습니다. 퀴즈 판정 API를 추가했습니다. 구매·패스·차례 종료 서버 API는 아직 없습니다.
+이동할 때 남은 턴은 차감하지 않습니다. 퀴즈 판정 API를 추가했습니다. 구매·패스·차례 종료·무인도 대기 API를 로컬 구현했습니다. 실제 프로젝트에는 최신 업데이트 SQL과 Edge Function 적용이 필요합니다.
 다른 캐릭터 이동 능력은 ABILITY_UNAVAILABLE로 거절하고 이동·재화를 저장하지 않습니다.
 황금열쇠는 EVENT_RULES_UNAVAILABLE로 거절하고 상태를 저장하지 않습니다.
 무인도는 도착 상태와 다음 차례 대기 1회를 기록하지만 대기 처리 API는 아직 없습니다.
@@ -180,3 +186,44 @@ AI 퀴즈는 보드에서 한 번 자동 판정하고, 사용자 퀴즈는 선�
 game-quiz-resolution-functions.sql은 서버 전용 보조 함수의 원본이며 개별 적용 대신 update.sql을 사용합니다.
 신규 설치용 game-quiz-setup.sql에도 동일한 함수를 반영했습니다.
 기존 프로젝트에서 초기 설정·문항 등록 SQL을 다시 실행하지 않습니다.
+
+## 구매·차례 종료 업데이트 (로컬 검증 완료, 원격 적용 전)
+
+현재 배포용 최신 파일은 docs/api/game-turn-update.sql입니다.
+기존 계정·문항·게임을 유지하며 보조 함수·스냅샷·RPC를 일괄 교체합니다.
+이전 AI 이동·퀴즈 업데이트를 포함하므로 적용 후 과거 업데이트 SQL로 되돌리지 않습니다.
+
+- purchases 본문: expectedVersion, tileId, action(BUY 또는 PASS).
+- ai/purchases 본문: expectedVersion, tileId. 잔액이 가격 이상이면 BUY, 부족하면 PASS를 서버에서 선택합니다.
+- turn-completions와 ai/turn-completions 본문: expectedVersion, turnId.
+- island-skips와 ai/island-skips 본문: expectedVersion, turnId.
+- 모든 변경 요청에 사용자 JWT와 UUID Idempotency-Key가 필요합니다.
+
+구매는 현재 차례의 정답 문항·구매 대기 칸·소유자·가격·잔액을 검증하고 출금과 소유권을 원자적으로 저장합니다.
+클라이언트가 가격·AI의 구매 선택을 입력할 수 없습니다.
+잔액 부족 구매는 INSUFFICIENT_GOLD이며 구매 대기를 유지해 패스할 수 있습니다.
+구매·패스 후 TURN_REVIEW이며 아직 턴을 차감하지 않습니다.
+구매 응답 data.purchaseEvent는 eventId, playerId, tileId, action, amount를 포함합니다.
+
+차례 종료는 TURN_REVIEW이며 미판정 퀴즈·구매·이벤트가 없을 때만 가능합니다.
+현재 turnId를 확인하고 차례를 닫으며 남은 턴을 정확히 한 번 차감합니다.
+상대에게 남은 턴이 있으면 상대, 없으면 현재 참가자가 계속 진행합니다.
+양쪽 턴이 모두 소진되면 FINISHED로 저장하고 현재 참가자·차례를 비웁니다.
+계정 wallet_gold·total_points·completed_game_count와 최종 보상은 변경하지 않습니다.
+무인도 대기는 TURN_READY·대기 1회·미이동 상태에서만 허용하며 주사위·보상 없이 1턴을 소비하고 대기를 해제합니다.
+
+Android debug 보드는 사용자 구매·패스·차례 종료·무인도 대기 버튼을 제공합니다.
+AI는 이동→퀴즈 판정→구매·패스→차례 종료를 상태별로 자동 요청합니다.
+오류 발생 시 자동 무한 재시도를 하지 않으며 응답 유실은 원래 요청 키로 재시도합니다.
+구매 응답의 eventId로 소유 도장 애니메이션 중복을 막고 칸 ID를 화면 기준으로 변환합니다.
+같은 화면 세션에서는 AI 차례가 끝나도 마지막 퀴즈 결과를 확인할 수 있습니다.
+팀 보드의 디자인은 유지하며 게임 종료 문구만 양쪽 턴 소진을 검사하도록 보완했습니다.
+
+기존 프로젝트 적용:
+1. SQL Editor에서 game-turn-update.sql 전체를 실행합니다.
+2. finpop-api의 handler.mjs를 로컬 최신 내용으로 교체하고 Deploy updates를 누릅니다.
+3. 앱을 재빌드하고 기존 TURN_REVIEW·P2 게임을 조회해 보드를 엽니다.
+4. AI 남은 턴이 7→6으로 바뀌고 현재 차례 P1·TURN_READY인지 확인합니다.
+5. 사용자 이동·퀴즈·구매 또는 패스·차례 종료 후 AI가 진행하고 P1으로 복귀하는지 확인합니다.
+
+황금열쇠·나머지 캐릭터 능력·최종 계정 보상과 실제 동시성 검증은 별도 작업입니다.

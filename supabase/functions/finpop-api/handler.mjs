@@ -15,12 +15,12 @@ export function createHandler({url, publicKey, serviceKey, fetcher=fetch, uuid=(
       if(request.method==="GET" && pathname==="/v1/game-config") operation="config";
       else if(request.method==="POST" && pathname==="/v1/games") operation="create";
       else{
-        const match=pathname.match(/^\/v1\/games\/([^/]+)(?:\/(initiative|rolls|ai\/rolls|quiz-answers|quiz-timeouts|ai\/quiz-answers))?$/);
+        const match=pathname.match(/^\/v1\/games\/([^/]+)(?:\/(initiative|rolls|ai\/rolls|quiz-answers|quiz-timeouts|ai\/quiz-answers|purchases|ai\/purchases|turn-completions|ai\/turn-completions|island-skips|ai\/island-skips))?$/);
         if(!match) return error(404,"RESOURCE_NOT_FOUND","요청한 API를 찾을 수 없습니다.");
         gameId=match[1];
         if(!UUID.test(gameId)) return error(400,"INVALID_REQUEST","gameId는 UUID여야 합니다.");
         if(request.method==="GET" && !match[2]) operation="get";
-        else if(request.method==="POST" && match[2]) operation=({"initiative":"initiative","rolls":"roll","ai/rolls":"ai-roll","quiz-answers":"answer","quiz-timeouts":"quiz-timeout","ai/quiz-answers":"ai-answer"})[match[2]];
+        else if(request.method==="POST" && match[2]) operation=({"initiative":"initiative","rolls":"roll","ai/rolls":"ai-roll","quiz-answers":"answer","quiz-timeouts":"quiz-timeout","ai/quiz-answers":"ai-answer","purchases":"purchase","ai/purchases":"ai-purchase","turn-completions":"complete-turn","ai/turn-completions":"ai-complete-turn","island-skips":"island-skip","ai/island-skips":"ai-island-skip"})[match[2]];
         else return error(405,"METHOD_NOT_ALLOWED","지원하지 않는 메서드입니다.");
       }
       const authorization=request.headers.get("Authorization");
@@ -48,7 +48,10 @@ export function createHandler({url, publicKey, serviceKey, fetcher=fetch, uuid=(
         }
         try{body=JSON.parse(text);}catch{return error(400,"INVALID_REQUEST","올바른 JSON이 아닙니다.");}
         const quizOperation=["answer","quiz-timeout","ai-answer"].includes(operation);
-        const allowed=operation==="create"?["mode","characterId"]:
+        const turnOperation=["complete-turn","ai-complete-turn","island-skip","ai-island-skip"].includes(operation);
+        const allowed=turnOperation?["expectedVersion","turnId"]:
+          operation==="purchase"?["expectedVersion","tileId","action"]:
+          operation==="ai-purchase"?["expectedVersion","tileId"]:operation==="create"?["mode","characterId"]:
           quizOperation?["expectedVersion","attemptId",...(operation==="answer"?["choiceId"]:[])]:["expectedVersion"];
         if(!body || Array.isArray(body) || typeof body!=="object" ||
            Object.keys(body).some(k=>!allowed.includes(k)))
@@ -64,6 +67,13 @@ export function createHandler({url, publicKey, serviceKey, fetcher=fetch, uuid=(
            (operation==="answer" && (!Number.isInteger(body.choiceId)||body.choiceId<1||body.choiceId>4)))
           return error(400,"INVALID_REQUEST","문항 ID와 선택지를 확인해 주세요.");
       }
+      if(["purchase","ai-purchase"].includes(operation) &&
+         (!Number.isInteger(body.tileId)||body.tileId<0||body.tileId>13||
+          (operation==="purchase"&&!["BUY","PASS"].includes(body.action))))
+        return error(400,"INVALID_REQUEST","구매할 칸과 선택을 확인해 주세요.");
+      if(["complete-turn","ai-complete-turn","island-skip","ai-island-skip"].includes(operation) &&
+         (typeof body.turnId!=="string"||!UUID.test(body.turnId)))
+        return error(400,"INVALID_REQUEST","현재 차례 ID가 필요합니다.");
       // 토큰 내용을 단순 해독해서 신뢰하지 않습니다. 요청 본문에서 userId도 받지 않습니다.
       const auth=await fetcher(base+"/auth/v1/user",{
         headers:{apikey:publicKey,Authorization:authorization},

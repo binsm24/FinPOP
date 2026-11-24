@@ -136,3 +136,22 @@ test("판정 요청의 정답·시간·AI 선택지 위조 차단",async()=>{
   assert.equal(f.calls.length,0);
  }
 });
+
+test("구매·종료·무인도 경로는 전용 서버 연산으로 매핑",async()=>{
+ const cases=[["purchases","purchase",{tileId:1,action:"BUY"}],["ai/purchases","ai-purchase",{tileId:1}],
+ ["turn-completions","complete-turn",{turnId:key}],["ai/turn-completions","ai-complete-turn",{turnId:key}],
+ ["island-skips","island-skip",{turnId:key}],["ai/island-skips","ai-island-skip",{turnId:key}]];
+ for(const [path,operation,extra] of cases){
+  const f=fixture();
+  assert.equal((await f.handler(request("/v1/games/"+gid+"/"+path,{expectedVersion:4,...extra}))).status,200);
+  assert.equal(JSON.parse(f.calls[1].options.body).p_operation,operation);
+ }
+});
+test("구매 금액·AI 선택·턴 ID 위조 차단",async()=>{
+ for(const [path,extra] of [["purchases",{tileId:1,action:"BUY",price:1}],["purchases",{tileId:1,action:"OTHER"}],
+ ["ai/purchases",{tileId:1,action:"BUY"}],["turn-completions",{turnId:"invalid"}],["purchases",{tileId:14,action:"BUY"}]]){
+  const f=fixture();
+  assert.equal((await f.handler(request("/v1/games/"+gid+"/"+path,{expectedVersion:4,...extra}))).status,400);
+  assert.equal(f.calls.length,0);
+ }
+});

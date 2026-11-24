@@ -3,6 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import {readFile,writeFile} from "node:fs/promises";
 import assert from "node:assert/strict";
 import {validateQuiz} from "./quiz-checks.mjs";
+import {validateTurnActions} from "./turn-action-checks.mjs";
 import {validateQuizResolution} from "./quiz-resolution-checks.mjs";
 import {validateAiMovement} from "./ai-movement-checks.mjs";
 import {validateBasicImport} from "./basic-import-checks.mjs";
@@ -212,6 +213,7 @@ await test("AI 업데이트 SQL은 기존 게임 상태·RPC 권한 보존",asyn
 });
 await validateAiMovement({db,test,rpc,fixedDice,ids});
 await validateQuizResolution({db,test,rpc,fixedDice,ids});
+await validateTurnActions({db,test,rpc,fixedDice,ids});
 await validateBasicImport({db,test});
 const report={engine:"PGlite 0.5.16",passed:results.filter(r=>r.passed).length,failed:results.filter(r=>!r.passed).length,results};
 await writeFile(new URL("./results.json",import.meta.url),JSON.stringify(report,null,2));
