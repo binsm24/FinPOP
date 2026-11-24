@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -90,7 +92,7 @@ data class GameBoardUiState(
     /** Call only after purchase success, with IDs mapped to this board. Reset for a new game. */
     fun withPurchase(event: TilePurchaseUiEvent): GameBoardUiState {
         require(event.eventId.isNotBlank())
-        require(event.tileId in setOf(1, 2, 4, 5, 6, 8, 9, 11, 12, 13))
+        require(quizTile(event.tileId) != null)
         if (event.eventId in receivedPurchaseIds) return this
         return copy(
             playerOwnedTiles = if (event.ownerId == GameBoardPlayerId.P1) playerOwnedTiles + event.tileId else playerOwnedTiles - event.tileId,
@@ -120,6 +122,8 @@ fun MainGameBoardScreen(
     modifier: Modifier = Modifier,
     state: GameBoardUiState = GameBoardUiState(),
     onPurchaseAnimationFinished: (String) -> Unit = {},
+    blurBoard: Boolean = false,
+    overlay: (@Composable () -> Unit)? = null,
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize().background(Paper).safeDrawingPadding(),
@@ -128,7 +132,18 @@ fun MainGameBoardScreen(
         topBar = { MainAppBar("Game Board", onMenuClick) },
         bottomBar = { MainBottomNavigationBar(MainTab.Board, onTabSelected) },
     ) { padding ->
-        MainGameBoardContent(state, onRollDice, onTileClick, Modifier.padding(padding), onPurchaseAnimationFinished)
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            MainGameBoardContent(
+                state, onRollDice, onTileClick,
+                when {
+                    blurBoard -> Modifier.blur(3.dp).clearAndSetSemantics {}
+                    overlay != null -> Modifier.clearAndSetSemantics {}
+                    else -> Modifier
+                },
+                onPurchaseAnimationFinished,
+            )
+            overlay?.invoke()
+        }
     }
 }
 
@@ -208,6 +223,23 @@ private fun PlayerCard(name: String, gold: Int, turns: Int, active: Boolean, ai:
 
 private data class BoardTile(val id: Int, val column: Int, val row: Int, val number: String,
     val title: String, val footer: String, val icon: String, val arrow: String, val color: Color = Color.White)
+
+internal data class QuizTile(
+    val id: Int,
+    val number: String,
+    val title: String,
+    val icon: String,
+    val price: Int,
+)
+
+internal fun gameBoardDestination(position: Int, roll: Int): Int = (position + roll) % Tiles.size
+
+internal fun quizTile(id: Int): QuizTile? {
+    val tile = Tiles.getOrNull(id) ?: return null
+    val price = tile.footer.removeSuffix("G").toIntOrNull()?.takeIf { it > 0 } ?: return null
+    if (tile.id == 7) return null
+    return QuizTile(tile.id, tile.number, tile.title, tile.icon, price)
+}
 
 private val Tiles = listOf(
     BoardTile(0, 0, 0, "휴식", "무인도", "1턴 대기", "island", "→", Color(0xFFE8F5E9)),
@@ -412,7 +444,7 @@ private val IconPaths = mapOf(
 ).mapValues { (_, path) -> PathParser().parsePathString(path).toPath() }
 
 @Composable
-private fun BoardIcon(kind: String, tint: Color, modifier: Modifier = Modifier) {
+internal fun BoardIcon(kind: String, tint: Color, modifier: Modifier = Modifier) {
     Canvas(modifier) {
         scale(size.width / 24f, size.height / 24f, pivot = Offset.Zero) {
             val path = IconPaths[kind] ?: return@scale
