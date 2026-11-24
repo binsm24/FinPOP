@@ -1,0 +1,1130 @@
+{
+  "schemaVersion": 1,
+  "contentVersion": "1.0.0",
+  "reviewedAt": "2026-11-12",
+  "status": "team_review_draft",
+  "locale": "ko-KR",
+  "description": "FinPOP 기본 금융 퀴즈. 제안서 보드의 일반 칸 10개 주제별 3문항. 공식 자료의 개념을 바탕으로 새로 작성한 교육용 문항이며 계산 수치는 가상 조건이다. 앱/API 확정 스키마가 아닌 콘텐츠 교환용 초안이다.",
+  "sources": [
+    {
+      "id": "S01",
+      "publisher": "미국 증권거래위원회(SEC), Investor.gov",
+      "title": "Stocks - FAQs",
+      "url": "https://www.investor.gov/introduction-investing/investing-basics/investment-products/stocks",
+      "scope": "주식의 소유권, 가격 변동 위험, 배당 개념"
+    },
+    {
+      "id": "S02",
+      "publisher": "미국 증권거래위원회(SEC), Investor.gov",
+      "title": "Bonds - FAQs",
+      "url": "https://www.investor.gov/introduction-investing/investing-basics/investment-products/bonds-or-fixed-income-products/bonds",
+      "scope": "채권, 상환 약속, 신용 위험, 금리와 채권 가격"
+    },
+    {
+      "id": "S03",
+      "publisher": "미국 증권거래위원회(SEC), Investor.gov",
+      "title": "Certificates of Deposit (CDs)",
+      "url": "https://www.investor.gov/introduction-investing/investing-basics/investment-products/certificates-deposit-cds",
+      "scope": "기간을 정한 예치와 만기의 일반 개념. 미국 CD의 제도·보호한도는 국내 문항에 적용하지 않음"
+    },
+    {
+      "id": "S04",
+      "publisher": "미국 소비자금융보호국(CFPB)",
+      "title": "How does compound interest work?",
+      "url": "https://www.consumerfinance.gov/ask-cfpb/how-does-compound-interest-work-en-1683/",
+      "scope": "원금과 누적 이자에 붙는 복리"
+    },
+    {
+      "id": "S05",
+      "publisher": "저축은행중앙회",
+      "title": "상품공시 - 정기예금",
+      "url": "https://fsb.or.kr/ratedepo_0100.act",
+      "scope": "정기예금의 원리금·기간 및 상품별 조건. 검색 결과 발췌 확인, 본문 직접 열기 시간 초과"
+    },
+    {
+      "id": "S06",
+      "publisher": "인성저축은행",
+      "title": "정기적금 상품안내",
+      "url": "https://insung.ibs.fsb.or.kr/ProdList_001.act?rnum=6",
+      "scope": "매월 일정 금액을 납입해 목돈을 마련하는 정기적금. 검색 결과 발췌 확인, 본문 직접 열기 실패. 개별 상품 금리·세율은 사용하지 않음"
+    },
+    {
+      "id": "S07",
+      "publisher": "미국 연방예금보험공사(FDIC)",
+      "title": "Loans",
+      "url": "https://www.fdic.gov/consumer-resource-center/loans",
+      "scope": "대출 원금·이자·수수료. 검색 결과 발췌 확인, 본문 직접 열기는 403 응답"
+    },
+    {
+      "id": "S08",
+      "publisher": "미국 증권거래위원회(SEC), Investor.gov",
+      "title": "Glossary - Asset / Principal",
+      "url": "https://www.investor.gov/introduction-investing/investing-basics/glossary",
+      "scope": "자산과 원금의 정의"
+    },
+    {
+      "id": "S09",
+      "publisher": "미국 증권거래위원회(SEC), Investor.gov",
+      "title": "Figure Out Your Finances",
+      "url": "https://www.investor.gov/introduction-investing/investing-basics/save-and-invest/figure-out-your-finances",
+      "scope": "자산, 부채, 순자산 구분"
+    },
+    {
+      "id": "S10",
+      "publisher": "미국 증권거래위원회(SEC), Investor.gov",
+      "title": "Mutual Funds",
+      "url": "https://www.investor.gov/introduction-investing/investing-basics/investment-products/mutual-funds-and-exchange-traded-funds-etfs/mutual-funds",
+      "scope": "펀드의 구조와 손실 위험"
+    },
+    {
+      "id": "S11",
+      "publisher": "미국 증권거래위원회(SEC), Investor.gov",
+      "title": "Asset Allocation and Diversification",
+      "url": "https://www.investor.gov/introduction-investing/getting-started/asset-allocation",
+      "scope": "분산투자와 특정 분야에 집중한 펀드의 한계"
+    },
+    {
+      "id": "S12",
+      "publisher": "저축은행중앙회",
+      "title": "상품공시 이용방법안내",
+      "url": "https://www.fsb.or.kr/ratuserguide_0100.act",
+      "scope": "상품별 금리와 우대조건 비교"
+    },
+    {
+      "id": "S13",
+      "publisher": "미국 소비자금융보호국(CFPB)",
+      "title": "How does paying down a mortgage work?",
+      "url": "https://www.consumerfinance.gov/ask-cfpb/how-does-paying-down-a-mortgage-work-en-1943/",
+      "scope": "원금 상환에 따른 이자 부담 변화. 미국 주택대출 제도는 국내 문항에 적용하지 않음"
+    }
+  ],
+  "questions": [
+    {
+      "id": "BASIC-STOCK-01",
+      "version": 1,
+      "topic": "주식",
+      "boardIndex": 1,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "주식을 산다는 것은 기본적으로 무엇을 뜻할까요?",
+      "options": [
+        {
+          "id": "A",
+          "text": "회사에 돈을 빌려주고 상환을 약속받는 것"
+        },
+        {
+          "id": "B",
+          "text": "회사의 소유 지분 일부를 갖는 것"
+        },
+        {
+          "id": "C",
+          "text": "은행에 정해진 기간 돈을 맡기는 것"
+        },
+        {
+          "id": "D",
+          "text": "보험 사고가 나면 보상받을 권리를 사는 것"
+        }
+      ],
+      "correctOptionId": "B",
+      "hint": "주주가 회사와 어떤 관계를 맺는지 생각해 보세요.",
+      "explanation": "주식은 회사의 소유 지분을 나타냅니다. 돈을 빌려주고 상환을 약속받는 채권과 구별됩니다.",
+      "sourceIds": [
+        "S01",
+        "S02"
+      ]
+    },
+    {
+      "id": "BASIC-STOCK-02",
+      "version": 1,
+      "topic": "주식",
+      "boardIndex": 1,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "일반적인 주식 투자에 대한 설명으로 맞는 것은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "보유 기간이 길면 원금이 보장된다"
+        },
+        {
+          "id": "B",
+          "text": "유명한 회사의 주가는 하락하지 않는다"
+        },
+        {
+          "id": "C",
+          "text": "수익과 관계없이 배당이 매달 보장된다"
+        },
+        {
+          "id": "D",
+          "text": "주가가 하락하면 투자 손실이 날 수 있다"
+        }
+      ],
+      "correctOptionId": "D",
+      "hint": "회사의 지분 가격이 달라지면 내 투자금의 가치도 달라져요.",
+      "explanation": "주가는 변동하며 원금 손실이 날 수 있습니다. 유명한 회사이거나 오래 보유한다고 원금이 보장되지는 않습니다.",
+      "sourceIds": [
+        "S01"
+      ]
+    },
+    {
+      "id": "BASIC-STOCK-03",
+      "version": 1,
+      "topic": "주식",
+      "boardIndex": 1,
+      "type": "calculation",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "1주에 1만 원인 주식 2주를 사서 1주에 1만 2천 원에 모두 팔았어요. 매매 차익은? (세금·수수료 제외)",
+      "options": [
+        {
+          "id": "A",
+          "text": "4,000원"
+        },
+        {
+          "id": "B",
+          "text": "2,000원"
+        },
+        {
+          "id": "C",
+          "text": "20,000원"
+        },
+        {
+          "id": "D",
+          "text": "24,000원"
+        }
+      ],
+      "correctOptionId": "A",
+      "hint": "한 주의 가격 차이에 보유 주식 수를 곱해 보세요.",
+      "explanation": "한 주의 차익은 12,000 - 10,000 = 2,000원입니다. 2주이므로 총 차익은 4,000원입니다.",
+      "sourceIds": [
+        "S01"
+      ]
+    },
+    {
+      "id": "BASIC-BOND-01",
+      "version": 1,
+      "topic": "채권",
+      "boardIndex": 2,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "채권을 산 투자자는 발행자와 기본적으로 어떤 관계가 될까요?",
+      "options": [
+        {
+          "id": "A",
+          "text": "회사 지분을 소유한 주주"
+        },
+        {
+          "id": "B",
+          "text": "발행자의 상품을 대신 파는 판매자"
+        },
+        {
+          "id": "C",
+          "text": "발행자에게 돈을 빌려준 채권자"
+        },
+        {
+          "id": "D",
+          "text": "발행자의 손실을 보상하는 보험사"
+        }
+      ],
+      "correctOptionId": "C",
+      "hint": "채권 발행자는 투자자에게 돈을 조달하고 상환을 약속해요.",
+      "explanation": "채권은 빚을 나타내는 증권입니다. 투자자는 발행자에게 돈을 빌려주고 약정에 따른 상환을 약속받습니다.",
+      "sourceIds": [
+        "S02"
+      ]
+    },
+    {
+      "id": "BASIC-BOND-02",
+      "version": 1,
+      "topic": "채권",
+      "boardIndex": 2,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "회사가 발행한 채권의 위험에 대한 설명으로 맞는 것은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "채권이면 발행 회사와 관계없이 원금이 보장된다"
+        },
+        {
+          "id": "B",
+          "text": "발행 회사가 돈을 갚지 못할 위험이 있다"
+        },
+        {
+          "id": "C",
+          "text": "주가가 오르면 채권 원금도 자동으로 늘어난다"
+        },
+        {
+          "id": "D",
+          "text": "만기 전에 팔아도 매입 가격이 보장된다"
+        }
+      ],
+      "correctOptionId": "B",
+      "hint": "상환을 약속한 상대방이 약속을 지킬 수 있는지도 중요해요.",
+      "explanation": "발행자가 원금이나 이자를 지급하지 못하는 신용 위험이 있습니다. 상환 약속이 있다는 것이 지급 보장을 뜻하지는 않습니다.",
+      "sourceIds": [
+        "S02"
+      ]
+    },
+    {
+      "id": "BASIC-BOND-03",
+      "version": 1,
+      "topic": "채권",
+      "boardIndex": 2,
+      "type": "application",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "다른 조건이 같을 때 시장금리가 오르면, 이미 발행된 고정금리 채권의 가격은 일반적으로?",
+      "options": [
+        {
+          "id": "A",
+          "text": "오른다"
+        },
+        {
+          "id": "B",
+          "text": "항상 그대로다"
+        },
+        {
+          "id": "C",
+          "text": "반드시 0원이 된다"
+        },
+        {
+          "id": "D",
+          "text": "내린다"
+        }
+      ],
+      "correctOptionId": "D",
+      "hint": "새 채권이 더 높은 이자를 준다면 기존 채권의 매력은 어떻게 될까요?",
+      "explanation": "새 채권의 금리가 높아지면 기존의 낮은 고정 이자를 주는 채권은 상대적으로 덜 매력적입니다. 따라서 기존 채권 가격은 일반적으로 하락합니다.",
+      "sourceIds": [
+        "S02"
+      ]
+    },
+    {
+      "id": "BASIC-MATURITY-01",
+      "version": 1,
+      "topic": "만기",
+      "boardIndex": 4,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "정기예금에서 ‘만기일’은 무엇을 뜻할까요?",
+      "options": [
+        {
+          "id": "A",
+          "text": "계약에서 정한 예치 기간이 끝나는 날"
+        },
+        {
+          "id": "B",
+          "text": "계좌 비밀번호를 바꾸는 날"
+        },
+        {
+          "id": "C",
+          "text": "예금 금리가 매일 바뀌는 시각"
+        },
+        {
+          "id": "D",
+          "text": "예금 가입을 신청할 수 있는 마지막 날"
+        }
+      ],
+      "correctOptionId": "A",
+      "hint": "가입할 때 약속한 돈을 맡기는 기간을 떠올려 보세요.",
+      "explanation": "만기일은 약정한 예치 기간이 끝나는 날입니다. 만기 지급액과 만기 후 처리 방식은 계약 조건에 따릅니다.",
+      "sourceIds": [
+        "S03",
+        "S05"
+      ]
+    },
+    {
+      "id": "BASIC-MATURITY-02",
+      "version": 1,
+      "topic": "만기",
+      "boardIndex": 4,
+      "type": "application",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "정기예금을 만기 전에 해지하려고 해요. 먼저 확인할 항목은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "은행 로고의 색상"
+        },
+        {
+          "id": "B",
+          "text": "주식시장의 거래량"
+        },
+        {
+          "id": "C",
+          "text": "중도해지 시 적용되는 이율과 조건"
+        },
+        {
+          "id": "D",
+          "text": "다른 사람의 계좌번호"
+        }
+      ],
+      "correctOptionId": "C",
+      "hint": "약속한 기간을 채우지 않았을 때 달라지는 계약 조건을 찾아보세요.",
+      "explanation": "만기 전 해지에는 별도의 중도해지이율 등이 적용될 수 있습니다. 가입할 때 본 만기 금리가 그대로 적용된다고 생각하면 안 됩니다.",
+      "sourceIds": [
+        "S05"
+      ]
+    },
+    {
+      "id": "BASIC-MATURITY-03",
+      "version": 1,
+      "topic": "만기",
+      "boardIndex": 4,
+      "type": "calculation",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "원금 100만 원과 세전 이자 3만 원을 만기일에 한꺼번에 받는 예금이에요. 세금이 없다고 가정한 만기 수령액은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "97만 원"
+        },
+        {
+          "id": "B",
+          "text": "103만 원"
+        },
+        {
+          "id": "C",
+          "text": "100만 원"
+        },
+        {
+          "id": "D",
+          "text": "3만 원"
+        }
+      ],
+      "correctOptionId": "B",
+      "hint": "이자를 포함한 전체 금액을 묻는 문제예요.",
+      "explanation": "원금 100만 원에 이자 3만 원을 더하면 103만 원입니다. 실제 수령액은 세금과 계약 조건에 따라 달라질 수 있습니다.",
+      "sourceIds": [
+        "S03"
+      ]
+    },
+    {
+      "id": "BASIC-COMPOUND-01",
+      "version": 1,
+      "topic": "복리",
+      "boardIndex": 5,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "복리 방식의 특징으로 맞는 것은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "처음 맡긴 원금에만 계속 이자가 붙는다"
+        },
+        {
+          "id": "B",
+          "text": "이자를 받으면 원금이 그만큼 줄어든다"
+        },
+        {
+          "id": "C",
+          "text": "기간과 관계없이 이자가 한 번만 붙는다"
+        },
+        {
+          "id": "D",
+          "text": "원금에 더해진 이자에도 다음 이자가 붙는다"
+        }
+      ],
+      "correctOptionId": "D",
+      "hint": "이자가 다음 기간의 계산 밑천에 포함되는지 생각해 보세요.",
+      "explanation": "복리는 원금에 누적된 이자를 합한 금액을 기준으로 다음 이자를 계산하는 방식입니다. 원금만 기준으로 계산하는 단리와 다릅니다.",
+      "sourceIds": [
+        "S04"
+      ]
+    },
+    {
+      "id": "BASIC-COMPOUND-02",
+      "version": 1,
+      "topic": "복리",
+      "boardIndex": 5,
+      "type": "calculation",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "100만 원을 연 10%, 1년마다 복리로 2년간 맡겨요. 세금·수수료가 없고 이자를 인출하지 않으면 최종 금액은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "121만 원"
+        },
+        {
+          "id": "B",
+          "text": "120만 원"
+        },
+        {
+          "id": "C",
+          "text": "110만 원"
+        },
+        {
+          "id": "D",
+          "text": "200만 원"
+        }
+      ],
+      "correctOptionId": "A",
+      "hint": "첫해 이자를 더한 잔액에 둘째 해 금리를 적용해 보세요.",
+      "explanation": "첫해 말에는 100만 원 × 1.1 = 110만 원, 둘째 해 말에는 110만 원 × 1.1 = 121만 원입니다. 10%는 계산을 위한 가상 금리입니다.",
+      "sourceIds": [
+        "S04"
+      ]
+    },
+    {
+      "id": "BASIC-COMPOUND-03",
+      "version": 1,
+      "topic": "복리",
+      "boardIndex": 5,
+      "type": "comparison",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "100만 원을 연 10%로 2년간 맡겨요. 연 단리 이자는 20만 원, 연 복리 이자는 21만 원이에요. 복리 이자가 더 큰 이유는?",
+      "options": [
+        {
+          "id": "A",
+          "text": "복리에는 세금이 없기 때문"
+        },
+        {
+          "id": "B",
+          "text": "단리는 둘째 해 이자가 없기 때문"
+        },
+        {
+          "id": "C",
+          "text": "첫해 이자에도 둘째 해 이자가 붙기 때문"
+        },
+        {
+          "id": "D",
+          "text": "복리는 원금을 두 번 입금하기 때문"
+        }
+      ],
+      "correctOptionId": "C",
+      "hint": "둘째 해 이자를 계산할 때 기준 금액이 어떻게 다른지 보세요.",
+      "explanation": "단리는 매년 원금 100만 원에 이자를 계산합니다. 연 복리는 둘째 해에 첫해 이자를 포함한 110만 원에 이자를 계산해 1만 원이 더 붙습니다. 세금·수수료는 제외한 비교입니다.",
+      "sourceIds": [
+        "S04"
+      ]
+    },
+    {
+      "id": "BASIC-DIVIDEND-01",
+      "version": 1,
+      "topic": "배당",
+      "boardIndex": 6,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "주식의 ‘배당’에 대한 설명으로 맞는 것은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "주식을 팔 때 증권사에 내는 비용"
+        },
+        {
+          "id": "B",
+          "text": "회사가 이익 등을 주주에게 나누어 주는 것"
+        },
+        {
+          "id": "C",
+          "text": "채권 만기에 돌려받는 원금"
+        },
+        {
+          "id": "D",
+          "text": "은행에 돈을 빌리며 내는 이자"
+        }
+      ],
+      "correctOptionId": "B",
+      "hint": "배당은 주주라는 지위와 관련된 분배예요.",
+      "explanation": "배당은 회사가 이익 등을 주주에게 분배하는 것입니다. 주식을 매도해 생기는 매매 차익과는 구별됩니다.",
+      "sourceIds": [
+        "S01"
+      ]
+    },
+    {
+      "id": "BASIC-DIVIDEND-02",
+      "version": 1,
+      "topic": "배당",
+      "boardIndex": 6,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "일반적인 보통주의 배당에 대한 설명으로 맞는 것은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "모든 회사가 매달 같은 금액을 지급한다"
+        },
+        {
+          "id": "B",
+          "text": "주식을 산 가격만큼 매년 지급한다"
+        },
+        {
+          "id": "C",
+          "text": "작년에 지급했으면 올해도 같은 금액이 보장된다"
+        },
+        {
+          "id": "D",
+          "text": "회사의 사정과 결정에 따라 지급하지 않을 수 있다"
+        }
+      ],
+      "correctOptionId": "D",
+      "hint": "배당과 예금의 약정 이자가 같은 성격인지 생각해 보세요.",
+      "explanation": "보통주의 배당은 고정적으로 보장되는 이자가 아닙니다. 회사의 실적과 배당 결정 등에 따라 금액이 달라지거나 지급되지 않을 수 있습니다.",
+      "sourceIds": [
+        "S01"
+      ]
+    },
+    {
+      "id": "BASIC-DIVIDEND-03",
+      "version": 1,
+      "topic": "배당",
+      "boardIndex": 6,
+      "type": "calculation",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "현금배당을 받을 권리가 있는 주식 10주를 갖고 있어요. 주당 배당금이 500원이면 세전 배당금 합계는?",
+      "options": [
+        {
+          "id": "A",
+          "text": "5,000원"
+        },
+        {
+          "id": "B",
+          "text": "500원"
+        },
+        {
+          "id": "C",
+          "text": "50,000원"
+        },
+        {
+          "id": "D",
+          "text": "10,500원"
+        }
+      ],
+      "correctOptionId": "A",
+      "hint": "주당 금액과 배당받는 주식 수를 함께 보세요.",
+      "explanation": "주당 배당금 500원 × 10주 = 5,000원입니다. 이는 세전 금액이며 실제 지급액은 세금 등에 따라 달라질 수 있습니다.",
+      "sourceIds": [
+        "S01"
+      ]
+    },
+    {
+      "id": "BASIC-DEPOSIT-01",
+      "version": 1,
+      "topic": "예금",
+      "boardIndex": 8,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "일반적인 정기예금의 저축 방식은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "은행에서 돈을 빌려 나누어 갚는다"
+        },
+        {
+          "id": "B",
+          "text": "주식을 매일 일정 수량씩 산다"
+        },
+        {
+          "id": "C",
+          "text": "목돈을 한 번에 맡기고 약정 기간 동안 예치한다"
+        },
+        {
+          "id": "D",
+          "text": "매달 같은 금액을 납입해 목돈을 모은다"
+        }
+      ],
+      "correctOptionId": "C",
+      "hint": "이미 가진 목돈을 굴리는 방식과 조금씩 모으는 방식을 구별해 보세요.",
+      "explanation": "일반적인 정기예금은 목돈을 한 번에 맡겨 일정 기간 운용하는 방식입니다. 매달 일정 금액을 모으는 정기적금과 구별됩니다.",
+      "sourceIds": [
+        "S05",
+        "S06"
+      ]
+    },
+    {
+      "id": "BASIC-DEPOSIT-02",
+      "version": 1,
+      "topic": "예금",
+      "boardIndex": 8,
+      "type": "calculation",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "100만 원을 연 3% 단리 정기예금에 정확히 1년간 맡겼어요. 세전 이자는?",
+      "options": [
+        {
+          "id": "A",
+          "text": "3,000원"
+        },
+        {
+          "id": "B",
+          "text": "30,000원"
+        },
+        {
+          "id": "C",
+          "text": "300,000원"
+        },
+        {
+          "id": "D",
+          "text": "1,030,000원"
+        }
+      ],
+      "correctOptionId": "B",
+      "hint": "이자만 구하려면 원금에 연이율과 연 단위 기간을 곱해 보세요.",
+      "explanation": "1,000,000원 × 0.03 × 1년 = 30,000원입니다. 원금을 포함한 수령액과 이자만의 금액을 구별해야 합니다.",
+      "sourceIds": [
+        "S05"
+      ]
+    },
+    {
+      "id": "BASIC-DEPOSIT-03",
+      "version": 1,
+      "topic": "예금",
+      "boardIndex": 8,
+      "type": "application",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "같은 금액·기간의 예금 두 개를 비교해요. 광고의 ‘최고금리’ 외에 실제 적용금리를 알려면 무엇을 확인해야 할까요?",
+      "options": [
+        {
+          "id": "A",
+          "text": "광고에 나온 모델"
+        },
+        {
+          "id": "B",
+          "text": "통장 표지의 디자인"
+        },
+        {
+          "id": "C",
+          "text": "은행 이름의 글자 수"
+        },
+        {
+          "id": "D",
+          "text": "기본금리와 내가 충족할 우대금리 조건"
+        }
+      ],
+      "correctOptionId": "D",
+      "hint": "조건을 충족해야만 받을 수 있는 금리가 있는지 살펴보세요.",
+      "explanation": "최고금리는 우대조건을 모두 충족했을 때의 금리일 수 있습니다. 기본금리와 자신이 충족하는 조건을 확인해야 실제 적용금리를 비교할 수 있습니다.",
+      "sourceIds": [
+        "S05",
+        "S12"
+      ]
+    },
+    {
+      "id": "BASIC-INSTALLMENT-01",
+      "version": 1,
+      "topic": "적금",
+      "boardIndex": 9,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "일반적인 정기적금의 납입 방식은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "정해진 기간 동안 매달 일정 금액을 넣는다"
+        },
+        {
+          "id": "B",
+          "text": "목돈을 처음에 한 번만 넣는다"
+        },
+        {
+          "id": "C",
+          "text": "은행에서 매달 돈을 빌린다"
+        },
+        {
+          "id": "D",
+          "text": "주가가 오를 때만 돈을 넣는다"
+        }
+      ],
+      "correctOptionId": "A",
+      "hint": "월급의 일부를 꾸준히 모아 목돈을 만드는 상황을 떠올려 보세요.",
+      "explanation": "정기적금은 매달 일정 금액을 납입해 목돈을 마련하는 방식입니다. 자유적립식 적금은 납입 조건이 다를 수 있습니다.",
+      "sourceIds": [
+        "S06"
+      ]
+    },
+    {
+      "id": "BASIC-INSTALLMENT-02",
+      "version": 1,
+      "topic": "적금",
+      "boardIndex": 9,
+      "type": "calculation",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "매달 10만 원씩 총 12회 적금에 넣었어요. 이자를 제외한 납입 원금 합계는?",
+      "options": [
+        {
+          "id": "A",
+          "text": "10만 원"
+        },
+        {
+          "id": "B",
+          "text": "110만 원"
+        },
+        {
+          "id": "C",
+          "text": "120만 원"
+        },
+        {
+          "id": "D",
+          "text": "132만 원"
+        }
+      ],
+      "correctOptionId": "C",
+      "hint": "한 번의 납입액에 실제 납입 횟수를 곱해 보세요.",
+      "explanation": "10만 원 × 12회 = 120만 원입니다. 문제는 이자를 포함한 만기 수령액이 아니라 납입 원금을 묻고 있습니다.",
+      "sourceIds": [
+        "S06"
+      ]
+    },
+    {
+      "id": "BASIC-INSTALLMENT-03",
+      "version": 1,
+      "topic": "적금",
+      "boardIndex": 9,
+      "type": "comparison",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "매달 납입한 적금에서 금리가 같아도 첫 납입금의 이자가 마지막 납입금보다 보통 더 큰 이유는?",
+      "options": [
+        {
+          "id": "A",
+          "text": "마지막 납입금에는 원금이 없기 때문"
+        },
+        {
+          "id": "B",
+          "text": "첫 납입금이 만기까지 더 오래 맡겨져 있기 때문"
+        },
+        {
+          "id": "C",
+          "text": "납입할 때마다 금리가 반드시 낮아지기 때문"
+        },
+        {
+          "id": "D",
+          "text": "은행이 첫 납입금만 투자하기 때문"
+        }
+      ],
+      "correctOptionId": "B",
+      "hint": "각 납입금이 은행에 머무는 기간을 비교해 보세요.",
+      "explanation": "같은 금리·금액이라면 이자가 붙는 기간이 길수록 이자가 커집니다. 적금의 각 납입금은 예치 기간이 달라 총 납입 원금 전체에 1년치 금리를 곱하면 안 됩니다.",
+      "sourceIds": [
+        "S06"
+      ]
+    },
+    {
+      "id": "BASIC-LOAN-01",
+      "version": 1,
+      "topic": "대출",
+      "boardIndex": 11,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "대출에서 ‘원금’이란 무엇일까요?",
+      "options": [
+        {
+          "id": "A",
+          "text": "돈을 빌리는 대가로 내는 이자"
+        },
+        {
+          "id": "B",
+          "text": "연체했을 때 추가로 내는 금액"
+        },
+        {
+          "id": "C",
+          "text": "대출을 받으며 내는 수수료"
+        },
+        {
+          "id": "D",
+          "text": "이자·수수료와 구별되는 빌린 돈 자체"
+        }
+      ],
+      "correctOptionId": "D",
+      "hint": "빌린 금액 자체와 돈을 빌리는 데 드는 비용을 구별해 보세요.",
+      "explanation": "대출 원금은 빌린 돈 자체입니다. 이자는 돈을 빌리는 대가이며 수수료 등과 함께 원금 외 비용이 될 수 있습니다.",
+      "sourceIds": [
+        "S07",
+        "S08"
+      ]
+    },
+    {
+      "id": "BASIC-LOAN-02",
+      "version": 1,
+      "topic": "대출",
+      "boardIndex": 11,
+      "type": "calculation",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "100만 원을 연 5% 단리로 정확히 1년 빌리고 원금은 만기에 갚아요. 중간 상환·수수료가 없을 때 1년 이자는?",
+      "options": [
+        {
+          "id": "A",
+          "text": "50,000원"
+        },
+        {
+          "id": "B",
+          "text": "5,000원"
+        },
+        {
+          "id": "C",
+          "text": "500,000원"
+        },
+        {
+          "id": "D",
+          "text": "1,050,000원"
+        }
+      ],
+      "correctOptionId": "A",
+      "hint": "원금이 1년 동안 그대로 유지된다는 조건을 활용해 보세요.",
+      "explanation": "1,000,000원 × 0.05 × 1년 = 50,000원입니다. 원리금 합계 1,050,000원과 이자만의 금액은 다릅니다.",
+      "sourceIds": [
+        "S07"
+      ]
+    },
+    {
+      "id": "BASIC-LOAN-03",
+      "version": 1,
+      "topic": "대출",
+      "boardIndex": 11,
+      "type": "application",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "원금과 대출 기간이 같은 두 대출의 총비용을 비교하려고 해요. 적절한 방법은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "광고의 글자 크기만 비교한다"
+        },
+        {
+          "id": "B",
+          "text": "금리가 낮으면 다른 조건은 보지 않는다"
+        },
+        {
+          "id": "C",
+          "text": "이자뿐 아니라 수수료와 상환 방식도 확인한다"
+        },
+        {
+          "id": "D",
+          "text": "월 납입액이 작으면 총비용도 항상 작다고 본다"
+        }
+      ],
+      "correctOptionId": "C",
+      "hint": "표시된 금리 외에 실제로 내는 돈에 영향을 주는 조건을 찾아보세요.",
+      "explanation": "대출 비용은 금리 외에 수수료와 원금 상환 일정의 영향도 받습니다. 같은 원금·기간이어도 실제 총비용은 다를 수 있습니다.",
+      "sourceIds": [
+        "S07",
+        "S13"
+      ]
+    },
+    {
+      "id": "BASIC-ASSET-01",
+      "version": 1,
+      "topic": "자산",
+      "boardIndex": 12,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "개인이 보유한 자산에 해당하는 것은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "아직 갚지 않은 대출금"
+        },
+        {
+          "id": "B",
+          "text": "본인 명의의 은행 예금 잔액"
+        },
+        {
+          "id": "C",
+          "text": "다음 달 갚아야 할 카드 대금"
+        },
+        {
+          "id": "D",
+          "text": "친구에게 빌려서 갚아야 할 돈"
+        }
+      ],
+      "correctOptionId": "B",
+      "hint": "보유한 경제적 가치와 갚아야 할 의무를 나누어 보세요.",
+      "explanation": "은행 예금 잔액은 보유한 경제적 가치인 자산입니다. 갚아야 할 대출금이나 카드 대금은 부채에 해당합니다.",
+      "sourceIds": [
+        "S08",
+        "S09"
+      ]
+    },
+    {
+      "id": "BASIC-ASSET-02",
+      "version": 1,
+      "topic": "자산",
+      "boardIndex": 12,
+      "type": "calculation",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "총자산이 500만 원이고 부채가 200만 원이에요. 순자산은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "700만 원"
+        },
+        {
+          "id": "B",
+          "text": "500만 원"
+        },
+        {
+          "id": "C",
+          "text": "200만 원"
+        },
+        {
+          "id": "D",
+          "text": "300만 원"
+        }
+      ],
+      "correctOptionId": "D",
+      "hint": "순자산은 보유 자산에서 갚아야 할 금액을 뺀 값이에요.",
+      "explanation": "순자산 = 총자산 - 부채이므로 500만 원 - 200만 원 = 300만 원입니다.",
+      "sourceIds": [
+        "S09"
+      ]
+    },
+    {
+      "id": "BASIC-ASSET-03",
+      "version": 1,
+      "topic": "자산",
+      "boardIndex": 12,
+      "type": "application",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "대출 100만 원을 받아 전액을 내 예금계좌에 넣었어요. 다른 변화와 비용이 없다면 순자산은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "변하지 않는다"
+        },
+        {
+          "id": "B",
+          "text": "100만 원 늘어난다"
+        },
+        {
+          "id": "C",
+          "text": "100만 원 줄어든다"
+        },
+        {
+          "id": "D",
+          "text": "200만 원 늘어난다"
+        }
+      ],
+      "correctOptionId": "A",
+      "hint": "예금 증가와 함께 갚아야 할 돈도 얼마나 늘었는지 보세요.",
+      "explanation": "예금 자산이 100만 원 늘지만 부채도 100만 원 늘어납니다. 자산에서 부채를 뺀 순자산의 변화는 0원입니다.",
+      "sourceIds": [
+        "S09"
+      ]
+    },
+    {
+      "id": "BASIC-FUND-01",
+      "version": 1,
+      "topic": "펀드",
+      "boardIndex": 13,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "일반적인 투자 펀드에 대한 설명으로 맞는 것은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "투자자가 은행에서 빌리는 대출 상품"
+        },
+        {
+          "id": "B",
+          "text": "매달 같은 이자를 보장하는 예금 상품"
+        },
+        {
+          "id": "C",
+          "text": "여러 투자자의 돈을 모아 자산에 투자하는 상품"
+        },
+        {
+          "id": "D",
+          "text": "회사가 주주에게 지급하는 현금배당 자체"
+        }
+      ],
+      "correctOptionId": "C",
+      "hint": "투자금을 모아 주식·채권 등에 운용하는 구조를 떠올려 보세요.",
+      "explanation": "펀드는 여러 투자자의 돈을 모아 주식·채권 등 자산에 투자하는 상품입니다. 투자 성과에 따라 손익이 생깁니다.",
+      "sourceIds": [
+        "S10"
+      ]
+    },
+    {
+      "id": "BASIC-FUND-02",
+      "version": 1,
+      "topic": "펀드",
+      "boardIndex": 13,
+      "type": "concept",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "은행에서 가입한 일반적인 주식형 펀드에 대한 설명으로 맞는 것은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "은행에서 가입했으므로 예금과 같다"
+        },
+        {
+          "id": "B",
+          "text": "운용 결과에 따라 원금 손실이 날 수 있다"
+        },
+        {
+          "id": "C",
+          "text": "전문가가 운용하므로 손실이 나지 않는다"
+        },
+        {
+          "id": "D",
+          "text": "가입 기간이 지나면 이익이 반드시 생긴다"
+        }
+      ],
+      "correctOptionId": "B",
+      "hint": "가입 장소와 투자 상품 자체의 위험은 구별해야 해요.",
+      "explanation": "주식형 펀드는 편입 주식 등의 가치에 따라 손실이 날 수 있습니다. 은행에서 가입하거나 전문가가 운용한다고 원금이 보장되지는 않습니다.",
+      "sourceIds": [
+        "S10"
+      ]
+    },
+    {
+      "id": "BASIC-FUND-03",
+      "version": 1,
+      "topic": "펀드",
+      "boardIndex": 13,
+      "type": "application",
+      "difficulty": "기초",
+      "timeLimitSeconds": 20,
+      "question": "여러 펀드를 보유할 때 분산투자에 대한 설명으로 맞는 것은?",
+      "options": [
+        {
+          "id": "A",
+          "text": "펀드 이름이 다르면 투자 대상도 반드시 다르다"
+        },
+        {
+          "id": "B",
+          "text": "펀드 수가 많으면 원금 손실이 불가능하다"
+        },
+        {
+          "id": "C",
+          "text": "모두 같은 산업에 투자할수록 분산 효과가 커진다"
+        },
+        {
+          "id": "D",
+          "text": "실제 투자 대상이 겹치는지 확인해야 한다"
+        }
+      ],
+      "correctOptionId": "D",
+      "hint": "상품 개수보다 그 안에 어떤 자산이 들어 있는지 살펴보세요.",
+      "explanation": "이름이 다른 펀드도 같은 산업이나 종목에 집중할 수 있습니다. 분산 효과를 보려면 실제 투자 대상과 비중을 확인해야 하며, 분산해도 손실 위험은 남습니다.",
+      "sourceIds": [
+        "S11"
+      ]
+    }
+  ]
+}

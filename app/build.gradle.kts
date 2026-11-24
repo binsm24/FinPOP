@@ -57,6 +57,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 
     // 추가: Supabase (로그인, DB, 통신)
     implementation(platform("io.github.jan-tennert.supabase:bom:3.2.2"))

@@ -246,7 +246,7 @@ private fun Board(state: GameBoardUiState, onRollDice: (GameBoardPlayerId) -> Un
                     Text(if (state.isRolling) "ROLLING…" else "DICE ${state.diceValue.coerceIn(1, 6)}", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                     Text(when {
                         state.isRolling -> "주사위 굴리는 중"
-                        state.playerTurnsRemaining <= 0 -> "게임 종료"
+                        state.playerTurnsRemaining <= 0 && state.aiTurnsRemaining <= 0 -> "게임 종료"
                         !state.isPlayerTurn -> "AI 턴 진행 중"
                         !state.canRollDice -> "이벤트 처리 중"
                         else -> "주사위를 눌러 굴려보세요"
