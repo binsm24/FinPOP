@@ -17,6 +17,13 @@ import com.finpop.app.feature.game.GameBoardPlayerId
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 import com.finpop.app.ui.component.MainTab
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import com.finpop.app.data.auth.AuthRepository
+import com.finpop.app.data.user.UserRepository
+import com.finpop.app.feature.auth.LoginAction
+import kotlinx.coroutines.launch
 
 /** Local guest entry only; server authentication is connected separately. */
 @Composable
@@ -56,11 +63,36 @@ fun Navigation(onMessage: (String) -> Unit) {
                 onTileClick = { onMessage("보드 칸 상세 화면 연결 예정") },
             )
         } else {
+            // 로그인 진행 상태 (로딩 중인 버튼, 에러 메시지)
+            val context = LocalContext.current
+            val scope = rememberCoroutineScope()
+            var loadingAction by remember { mutableStateOf<LoginAction?>(null) }
+            var errorMessage by remember { mutableStateOf<String?>(null) }
+
             LoginScreen(
-                onGoogleLogin = { onMessage("Google 로그인 연결 예정") },
+                onGoogleLogin = {
+                    scope.launch {
+                        loadingAction = LoginAction.Google
+                        errorMessage = null
+                        try {
+                            AuthRepository.signInWithGoogle(context)
+                            val me = UserRepository.getMyProfile()
+                            onMessage("${me.nickname}님 환영해요! (Lv.${me.userLevel})")
+                            showGameBoard = true // 로그인 성공 → 메인 보드로 이동
+                        } catch (e: GetCredentialCancellationException) {
+                            // 사용자가 계정 선택 창을 닫음 → 아무것도 안 함
+                        } catch (e: Exception) {
+                            errorMessage = "로그인에 실패했어요: ${e.message}"
+                        } finally {
+                            loadingAction = null
+                        }
+                    }
+                },
                 onGuestLogin = { showGameBoard = true },
                 onTermsClick = { onMessage("이용약관 화면 연결 예정") },
                 onPrivacyClick = { onMessage("개인정보 처리방침 화면 연결 예정") },
+                loadingAction = loadingAction,
+                errorMessage = errorMessage,
             )
         }
     }
