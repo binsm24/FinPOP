@@ -17,6 +17,7 @@ import com.finpop.app.feature.game.GameBoardPlayerId
 import com.finpop.app.feature.game.TilePurchaseUiEvent
 import com.finpop.app.feature.game.gameBoardDestination
 import com.finpop.app.feature.game.quizTile
+import com.finpop.app.feature.quiz.AiQuizResultPopup
 import com.finpop.app.feature.quiz.TileQuizPopup
 import kotlinx.coroutines.delay
 import kotlin.random.Random
@@ -24,7 +25,11 @@ import com.finpop.app.ui.component.MainTab
 
 /** Local guest entry only; server authentication is connected separately. */
 @Composable
-fun Navigation(onMessage: (String) -> Unit) {
+fun Navigation(
+    onMessage: (String) -> Unit,
+    // Temporary guest-game fallback until the team quiz resolver is wired in.
+    resolveAiQuiz: (tileId: Int) -> Boolean = { Random.nextBoolean() },
+) {
     var showGameBoard by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = showGameBoard) { showGameBoard = false }
@@ -37,7 +42,15 @@ fun Navigation(onMessage: (String) -> Unit) {
             var dicePlayerId by rememberSaveable { mutableStateOf(GameBoardPlayerId.P1) }
             var activeQuizTileId by remember { mutableStateOf<Int?>(null) }
             var quizCollapsed by remember { mutableStateOf(false) }
+            var aiQuizCorrect by remember { mutableStateOf<Boolean?>(null) }
             val activeTile = activeQuizTileId?.let(::quizTile)
+            val aiTile = aiQuizCorrect?.let { quizTile(boardState.aiPosition) }
+            val hasPopup = activeTile != null || aiTile != null
+
+            fun finishAiTurn() {
+                aiQuizCorrect = null
+                boardState = boardState.copy(currentPlayerId = GameBoardPlayerId.P1)
+            }
 
             fun finishPlayerTurn() {
                 activeQuizTileId = null
@@ -74,25 +87,26 @@ fun Navigation(onMessage: (String) -> Unit) {
                         aiTurnsRemaining = boardState.aiTurnsRemaining - 1,
                         aiGold = boardState.aiGold - paid,
                         playerGold = boardState.playerGold + paid,
-                        currentPlayerId = GameBoardPlayerId.P1,
                     )
                     isRolling = false
+                    if (quizTile(destination) == null) finishAiTurn()
+                    else aiQuizCorrect = resolveAiQuiz(destination)
                 }
             }
             MainGameBoardScreen(
                 state = boardState.copy(
                     diceValue = diceValue, isRolling = isRolling, dicePlayerId = dicePlayerId,
-                    canRollDice = activeTile == null && boardState.canRollDice,
+                    canRollDice = !hasPopup && boardState.canRollDice,
                 ),
                 onPurchaseAnimationFinished = { eventId ->
                     boardState = boardState.purchaseAnimationFinished(eventId)
                 },
-                onMenuClick = { if (activeTile == null) onMessage("메뉴 연결 예정") },
+                onMenuClick = { if (!hasPopup) onMessage("메뉴 연결 예정") },
                 onTabSelected = { tab ->
-                    if (activeTile == null && tab != MainTab.Board) onMessage("${tab.label} 화면 연결 예정")
+                    if (!hasPopup && tab != MainTab.Board) onMessage("${tab.label} 화면 연결 예정")
                 },
                 onRollDice = { playerId ->
-                    if (!isRolling && activeTile == null && boardState.isPlayerTurn &&
+                    if (!isRolling && !hasPopup && boardState.isPlayerTurn &&
                         boardState.playerTurnsRemaining > 0 && playerId == GameBoardPlayerId.P1
                     ) {
                         dicePlayerId = playerId
@@ -100,7 +114,7 @@ fun Navigation(onMessage: (String) -> Unit) {
                     }
                 },
                 onTileClick = { onMessage("보드 칸 상세 화면 연결 예정") },
-                blurBoard = activeTile != null && !quizCollapsed,
+                blurBoard = hasPopup && !quizCollapsed,
                 overlay = activeTile?.let { tile ->
                     {
                         val available = tile.id !in boardState.playerOwnedTiles && tile.id !in boardState.aiOwnedTiles
@@ -122,6 +136,9 @@ fun Navigation(onMessage: (String) -> Unit) {
                             onFinish = ::finishPlayerTurn,
                         )
                     }
+                } ?: aiTile?.let { tile ->
+                    val correct = aiQuizCorrect == true
+                    { AiQuizResultPopup(tile, correct, onConfirm = ::finishAiTurn) }
                 },
             )
         } else {

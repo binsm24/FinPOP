@@ -74,7 +74,7 @@ data class GameBoardUiState(
     val playerTurnsRemaining: Int = 4,
     val aiTurnsRemaining: Int = 5,
     val currentPlayerId: GameBoardPlayerId = GameBoardPlayerId.P1,
-    // Keep the roller after the result arrives, even when currentPlayerId changes.
+    // Keep the result's roller for game state. The idle dice uses the current turn color.
     val dicePlayerId: GameBoardPlayerId = currentPlayerId,
     // Set from TURN_READY, remaining turns and island wait status in the game owner.
     val canRollDice: Boolean = true,
@@ -196,6 +196,7 @@ private fun FitBoardViewport(modifier: Modifier, content: @Composable () -> Unit
 @Composable
 private fun PlayerCard(name: String, gold: Int, turns: Int, active: Boolean, ai: Boolean, modifier: Modifier) {
     val accent = if (ai) Color(0xFFD9472B) else Blue
+    val turnAccent = if (active) accent else Muted
     Column(modifier.heightIn(min = 84.dp).hardShadow(2f).background(Color.White, RoundedCornerShape(4.dp))
         .border(2.dp, Ink, RoundedCornerShape(4.dp)).padding(10.dp), verticalArrangement = Arrangement.Center) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -211,8 +212,9 @@ private fun PlayerCard(name: String, gold: Int, turns: Int, active: Boolean, ai:
         }
         Spacer(Modifier.height(5.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("${turns.coerceAtLeast(0)}턴 남음", Modifier.background(accent.copy(alpha = .1f)).padding(horizontal = 4.dp, vertical = 1.dp),
-                color = accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("${turns.coerceAtLeast(0)}턴 남음",
+                Modifier.background(turnAccent.copy(alpha = .1f)).padding(horizontal = 4.dp, vertical = 1.dp),
+                color = turnAccent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             Text(if (active) (if (ai) "AI 턴" else "내 턴") else "대기",
                 Modifier.background(if (active) accent else Color(0xFFE2E8F0), RoundedCornerShape(2.dp))
                     .padding(horizontal = 7.dp, vertical = 2.dp),
@@ -381,14 +383,14 @@ private fun Pawn(ai: Boolean) {
 
 @Composable
 private fun RollingDice(state: GameBoardUiState, onRollDice: (GameBoardPlayerId) -> Unit) {
-    val progress = remember { Animatable(0f) }
-    LaunchedEffect(state.isRolling, state.dicePlayerId) {
-        progress.snapTo(0f)
-        if (state.isRolling) progress.animateTo(1f, tween(900, easing = LinearOutSlowInEasing))
-    }
     val rolling = state.isRolling
+    val progress = remember(rolling, state.dicePlayerId) { Animatable(0f) }
+    LaunchedEffect(progress) {
+        if (rolling) progress.animateTo(1f, tween(900, easing = LinearOutSlowInEasing))
+    }
+    val colorOwner = if (rolling) state.dicePlayerId else state.currentPlayerId
     val rollerName = if (state.dicePlayerId == GameBoardPlayerId.P1) "플레이어" else "AI"
-    val dotColor = if (state.dicePlayerId == GameBoardPlayerId.P1) Blue else AiRed
+    val dotColor = if (colorOwner == GameBoardPlayerId.P1) Blue else AiRed
     val phase = progress.value
     val face = if (rolling) (phase * 24).toInt() % 6 + 1 else state.diceValue
     Box(Modifier.size(80.dp)

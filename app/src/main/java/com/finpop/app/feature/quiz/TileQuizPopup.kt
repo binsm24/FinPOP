@@ -96,19 +96,7 @@ internal fun TileQuizPopup(
     val correct = page == QuizPage.Correct
     val failed = page == QuizPage.Incorrect
     val balance = NumberFormat.getIntegerInstance(Locale.KOREA).format(gold)
-    val shape = RoundedCornerShape(8.dp)
-    Box(
-        Modifier.fillMaxSize().background(if (collapsed) Color.Transparent else Ink.copy(alpha = 0.58f))
-            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        contentAlignment = if (collapsed) Alignment.TopCenter else Alignment.Center,
-    ) {
-        Column(
-            Modifier.widthIn(max = 410.dp).fillMaxWidth().shadow(14.dp, shape).clip(shape)
-                .background(Paper).border(2.dp, Ink, shape)
-                .verticalScroll(rememberScrollState())
-                .semantics { paneTitle = "금융 퀴즈" },
-        ) {
+    QuizTicket("금융 퀴즈", collapsed) {
             Column(Modifier.fillMaxWidth().background(Blue)) {
                 if (correct) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 4.dp),
@@ -158,7 +146,7 @@ internal fun TileQuizPopup(
                     }
                 }
             }
-            if (collapsed) return@Column
+            if (collapsed) return@QuizTicket
 
             Row(Modifier.fillMaxWidth().background(Tint).padding(horizontal = 13.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -258,7 +246,97 @@ internal fun TileQuizPopup(
                 }
                 TicketText(stamp, if (failed) Red else if (correct) Green else Muted)
             }
+    }
+}
+
+@Composable
+private fun QuizTicket(title: String, collapsed: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        Modifier.fillMaxSize().background(if (collapsed) Color.Transparent else Ink.copy(alpha = 0.58f))
+            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = if (collapsed) Alignment.TopCenter else Alignment.Center,
+    ) {
+        Column(
+            Modifier.widthIn(max = 410.dp).fillMaxWidth().shadow(14.dp, shape).clip(shape)
+                .background(Paper).border(2.dp, Ink, shape)
+                .verticalScroll(rememberScrollState())
+                .semantics { paneTitle = title },
+            content = content,
+        )
+    }
+}
+
+@Composable
+internal fun AiQuizResultPopup(tile: QuizTile, correct: Boolean, onConfirm: () -> Unit) {
+    val accent = if (correct) Green else Red
+    val tint = if (correct) Color(0xFFDCFCE7) else Color(0xFFFFDEDA)
+    BackHandler(onBack = onConfirm)
+    QuizTicket("AI 퀴즈 결과") {
+        Column(
+            Modifier.fillMaxWidth().background(Blue).padding(13.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            QuizLabel("AI 뱅커", Ink, Color(0xFFDDE7FF))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(36.dp).background(Color.White, Corners), contentAlignment = Alignment.Center) {
+                    BoardIcon(tile.icon, Blue, Modifier.size(25.dp))
+                }
+                Text(tile.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                Text("TILE ${tile.number}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+            }
         }
+        Row(
+            Modifier.fillMaxWidth().background(Tint).padding(horizontal = 13.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TicketText("AI QUIZ RESULT")
+            Barcode(Modifier.weight(1f).height(6.dp))
+            TicketText("TILE ${tile.number}")
+        }
+        Column(
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().background(tint, Corners).border(1.dp, accent.copy(alpha = 0.35f), Corners)
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                QuizLabel(if (correct) "✓" else "×", Color.White, accent)
+                Text(if (correct) "AI 퀴즈 성공" else "AI 퀴즈 실패",
+                    color = accent, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+            }
+            QuizButton("확인", filled = true, onClick = onConfirm)
+        }
+    }
+}
+
+@Preview(name = "04 AI 퀴즈 성공", showBackground = true, widthDp = 390, heightDp = 912)
+@Composable
+private fun AiQuizSuccessPreview() = AiQuizResultPreview(correct = true)
+
+@Preview(name = "05 AI 퀴즈 실패", showBackground = true, widthDp = 390, heightDp = 912)
+@Composable
+private fun AiQuizFailurePreview() = AiQuizResultPreview(correct = false)
+
+@Composable
+private fun AiQuizResultPreview(correct: Boolean) {
+    val tile = checkNotNull(quizTile(1))
+    MaterialTheme {
+        MainGameBoardScreen(
+            onMenuClick = {},
+            onTabSelected = {},
+            onRollDice = {},
+            onTileClick = {},
+            state = GameBoardUiState(aiPosition = tile.id, canRollDice = false,
+                currentPlayerId = com.finpop.app.feature.game.GameBoardPlayerId.P2),
+            blurBoard = true,
+            overlay = { AiQuizResultPopup(tile, correct, onConfirm = {}) },
+        )
     }
 }
 

@@ -9,7 +9,7 @@
 | 값 | 역할 |
 | --- | --- |
 | `currentPlayerId` | 현재 차례. P1만 터치로 굴릴 수 있음 |
-| `dicePlayerId` | 굴리는 사람 또는 마지막 결과의 주인. P1 눈은 파랑, P2 눈은 빨강 |
+| `dicePlayerId` | 굴리는 플레이어 또는 마지막 결과의 주인. 주사위를 굴릴 때는 이 값의 색을, 정지 상태에서는 `currentPlayerId`의 색을 사용 |
 | `diceValue` | Repository에서 확정한 1~6 결과 |
 | `isRolling` | true이면 애니메이션, false이면 확정 결과 표시 |
 | `canRollDice` | TURN_READY, 남은 턴, 무인도 대기 여부 등을 반영한 입력 허용 상태 |
