@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -72,7 +74,7 @@ data class GameBoardUiState(
     val playerTurnsRemaining: Int = 4,
     val aiTurnsRemaining: Int = 5,
     val currentPlayerId: GameBoardPlayerId = GameBoardPlayerId.P1,
-    // Keep the roller after the result arrives, even when currentPlayerId changes.
+    // Keep the result's roller for game state. The idle dice uses the current turn color.
     val dicePlayerId: GameBoardPlayerId = currentPlayerId,
     // Set from TURN_READY, remaining turns and island wait status in the game owner.
     val canRollDice: Boolean = true,
@@ -90,7 +92,7 @@ data class GameBoardUiState(
     /** Call only after purchase success, with IDs mapped to this board. Reset for a new game. */
     fun withPurchase(event: TilePurchaseUiEvent): GameBoardUiState {
         require(event.eventId.isNotBlank())
-        require(event.tileId in setOf(1, 2, 4, 5, 6, 8, 9, 11, 12, 13))
+        require(quizTile(event.tileId) != null)
         if (event.eventId in receivedPurchaseIds) return this
         return copy(
             playerOwnedTiles = if (event.ownerId == GameBoardPlayerId.P1) playerOwnedTiles + event.tileId else playerOwnedTiles - event.tileId,
@@ -120,6 +122,8 @@ fun MainGameBoardScreen(
     modifier: Modifier = Modifier,
     state: GameBoardUiState = GameBoardUiState(),
     onPurchaseAnimationFinished: (String) -> Unit = {},
+    blurBoard: Boolean = false,
+    overlay: (@Composable () -> Unit)? = null,
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize().background(Paper).safeDrawingPadding(),
@@ -128,7 +132,18 @@ fun MainGameBoardScreen(
         topBar = { MainAppBar("Game Board", onMenuClick) },
         bottomBar = { MainBottomNavigationBar(MainTab.Board, onTabSelected) },
     ) { padding ->
-        MainGameBoardContent(state, onRollDice, onTileClick, Modifier.padding(padding), onPurchaseAnimationFinished)
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            MainGameBoardContent(
+                state, onRollDice, onTileClick,
+                when {
+                    blurBoard -> Modifier.blur(3.dp).clearAndSetSemantics {}
+                    overlay != null -> Modifier.clearAndSetSemantics {}
+                    else -> Modifier
+                },
+                onPurchaseAnimationFinished,
+            )
+            overlay?.invoke()
+        }
     }
 }
 
@@ -181,6 +196,7 @@ private fun FitBoardViewport(modifier: Modifier, content: @Composable () -> Unit
 @Composable
 private fun PlayerCard(name: String, gold: Int, turns: Int, active: Boolean, ai: Boolean, modifier: Modifier) {
     val accent = if (ai) Color(0xFFD9472B) else Blue
+    val turnAccent = if (active) accent else Muted
     Column(modifier.heightIn(min = 84.dp).hardShadow(2f).background(Color.White, RoundedCornerShape(4.dp))
         .border(2.dp, Ink, RoundedCornerShape(4.dp)).padding(10.dp), verticalArrangement = Arrangement.Center) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -196,8 +212,9 @@ private fun PlayerCard(name: String, gold: Int, turns: Int, active: Boolean, ai:
         }
         Spacer(Modifier.height(5.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("${turns.coerceAtLeast(0)}턴 남음", Modifier.background(accent.copy(alpha = .1f)).padding(horizontal = 4.dp, vertical = 1.dp),
-                color = accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("${turns.coerceAtLeast(0)}턴 남음",
+                Modifier.background(turnAccent.copy(alpha = .1f)).padding(horizontal = 4.dp, vertical = 1.dp),
+                color = turnAccent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             Text(if (active) (if (ai) "AI 턴" else "내 턴") else "대기",
                 Modifier.background(if (active) accent else Color(0xFFE2E8F0), RoundedCornerShape(2.dp))
                     .padding(horizontal = 7.dp, vertical = 2.dp),
@@ -208,6 +225,23 @@ private fun PlayerCard(name: String, gold: Int, turns: Int, active: Boolean, ai:
 
 private data class BoardTile(val id: Int, val column: Int, val row: Int, val number: String,
     val title: String, val footer: String, val icon: String, val arrow: String, val color: Color = Color.White)
+
+internal data class QuizTile(
+    val id: Int,
+    val number: String,
+    val title: String,
+    val icon: String,
+    val price: Int,
+)
+
+internal fun gameBoardDestination(position: Int, roll: Int): Int = (position + roll) % Tiles.size
+
+internal fun quizTile(id: Int): QuizTile? {
+    val tile = Tiles.getOrNull(id) ?: return null
+    val price = tile.footer.removeSuffix("G").toIntOrNull()?.takeIf { it > 0 } ?: return null
+    if (tile.id == 7) return null
+    return QuizTile(tile.id, tile.number, tile.title, tile.icon, price)
+}
 
 private val Tiles = listOf(
     BoardTile(0, 0, 0, "휴식", "무인도", "1턴 대기", "island", "→", Color(0xFFE8F5E9)),
@@ -349,14 +383,14 @@ private fun Pawn(ai: Boolean) {
 
 @Composable
 private fun RollingDice(state: GameBoardUiState, onRollDice: (GameBoardPlayerId) -> Unit) {
-    val progress = remember { Animatable(0f) }
-    LaunchedEffect(state.isRolling, state.dicePlayerId) {
-        progress.snapTo(0f)
-        if (state.isRolling) progress.animateTo(1f, tween(900, easing = LinearOutSlowInEasing))
-    }
     val rolling = state.isRolling
+    val progress = remember(rolling, state.dicePlayerId) { Animatable(0f) }
+    LaunchedEffect(progress) {
+        if (rolling) progress.animateTo(1f, tween(900, easing = LinearOutSlowInEasing))
+    }
+    val colorOwner = if (rolling) state.dicePlayerId else state.currentPlayerId
     val rollerName = if (state.dicePlayerId == GameBoardPlayerId.P1) "플레이어" else "AI"
-    val dotColor = if (state.dicePlayerId == GameBoardPlayerId.P1) Blue else AiRed
+    val dotColor = if (colorOwner == GameBoardPlayerId.P1) Blue else AiRed
     val phase = progress.value
     val face = if (rolling) (phase * 24).toInt() % 6 + 1 else state.diceValue
     Box(Modifier.size(80.dp)
@@ -412,7 +446,7 @@ private val IconPaths = mapOf(
 ).mapValues { (_, path) -> PathParser().parsePathString(path).toPath() }
 
 @Composable
-private fun BoardIcon(kind: String, tint: Color, modifier: Modifier = Modifier) {
+internal fun BoardIcon(kind: String, tint: Color, modifier: Modifier = Modifier) {
     Canvas(modifier) {
         scale(size.width / 24f, size.height / 24f, pivot = Offset.Zero) {
             val path = IconPaths[kind] ?: return@scale
