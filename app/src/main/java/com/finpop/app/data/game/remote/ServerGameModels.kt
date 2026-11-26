@@ -9,6 +9,9 @@ data class ServerGame(
     val phase: String,
     val stateVersion: Int,
     val status: String = "ACTIVE",
+    val pausedAt: String? = null,
+    val abandonedAt: String? = null,
+    val remainingQuizMs: Int? = null,
     val quizStage: Int = 1,
     val currentPlayerId: String? = null,
     val currentTurnId: String? = null,
@@ -76,6 +79,7 @@ data class ServerGameReply(
 )
 
 enum class GameOperation(val suffix: String) {
+    PAUSE("/pause"), RESUME("/resume"), ABANDON("/abandon"),
     CREATE(""), GET(""), INITIATIVE("/initiative"), ROLL("/rolls"),
     ANSWER("/quiz-answers"), TIMEOUT("/quiz-timeouts"), PURCHASE("/purchases"),
     COMPLETE("/turn-completions"), SKIP_ISLAND("/island-skips"),

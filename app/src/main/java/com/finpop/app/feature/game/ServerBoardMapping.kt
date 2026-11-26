@@ -26,7 +26,7 @@ internal fun ServerGame.toFinalBoardState(ui: GameSessionUi): GameBoardUiState {
         currentPlayerId = if (currentPlayerId == "P2") GameBoardPlayerId.P2 else GameBoardPlayerId.P1,
         dicePlayerId = if (ui.roller == "P2") GameBoardPlayerId.P2 else GameBoardPlayerId.P1,
         diceValue = ui.dice, isRolling = ui.rolling,
-        canRollDice = phase == "TURN_READY" && currentPlayerId == "P1" &&
+        canRollDice = status == "ACTIVE" && phase == "TURN_READY" && currentPlayerId == "P1" &&
             p1.remainingTurns > 0 && p1.islandWaitTurns == 0 &&
             !ui.busy && ui.pending == null && ui.error == null,
         playerPosition = position("P1", p1.position), aiPosition = position("P2", p2.position),

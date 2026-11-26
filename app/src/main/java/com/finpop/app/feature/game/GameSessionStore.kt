@@ -52,7 +52,7 @@ class GameSessionStore(
     }
 
     fun startNewGame() {
-        if (state.value.busy || state.value.game?.status != "FINISHED") return
+        if (state.value.busy || state.value.game?.status !in setOf("FINISHED", "ABANDONED")) return
         mutable.value = GameSessionUi()
         start()
     }
@@ -115,6 +115,13 @@ class GameSessionStore(
         val current = state.value
         val game = current.game ?: return
         if (current.busy || current.pending != null || current.error != null) return
+        val allowed = when (operation) {
+            GameOperation.PAUSE -> game.status == "ACTIVE"
+            GameOperation.RESUME -> game.status == "PAUSED"
+            GameOperation.ABANDON -> game.status in setOf("ACTIVE", "PAUSED")
+            else -> game.status == "ACTIVE"
+        }
+        if (!allowed) return
         val body = buildJsonObject {
             put("expectedVersion", game.stateVersion)
             extra.forEach { (key, value) -> put(key, value) }
@@ -136,6 +143,10 @@ class GameSessionStore(
         if (state.value.pending != null || state.value.busy) return
         state.value.game?.let { perform(GameCommand(GameOperation.GET, it.gameId)) }
     }
+
+    fun pauseGame() = action(GameOperation.PAUSE)
+    fun resumeGame() = action(GameOperation.RESUME)
+    fun abandonGame() = action(GameOperation.ABANDON)
 
     fun initiative() {
         if (state.value.game?.phase == "INITIATIVE_PENDING") action(GameOperation.INITIATIVE)
@@ -202,7 +213,7 @@ class GameSessionStore(
     fun advance() {
         val current = state.value
         val game = current.game ?: return
-        if (current.busy || current.pending != null || current.error != null) return
+        if (current.busy || current.pending != null || current.error != null || game.status != "ACTIVE") return
         if (game.currentPlayerId == "P1") {
             if (game.phase == "TURN_REVIEW" && current.finishAfterPurchase) finishUserResult()
             return

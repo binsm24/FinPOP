@@ -138,4 +138,47 @@ class GameSessionStoreTest {
         assertEquals(0,quizSecondsRemaining("2026-11-24T06:00:20Z",0,
             java.time.Instant.parse("2026-11-24T06:00:21Z").toEpochMilli()))
     }
+
+    @Test fun pauseBlocksHumanAndAiUntilResume() {
+        val calls = mutableListOf<GameCommand>()
+        var g = fixtureGame(actor = "P2")
+        val s = store { c ->
+            calls += c
+            g = when(c.operation) {
+                GameOperation.PAUSE -> g.copy(status = "PAUSED", stateVersion = g.stateVersion + 1)
+                GameOperation.RESUME -> g.copy(status = "ACTIVE", stateVersion = g.stateVersion + 1)
+                else -> g
+            }
+            ServerGameReply(g)
+        }
+        s.start(); s.pauseGame(); s.advance(); s.roll(); s.timeout(); s.answer(1); s.pauseGame()
+        assertEquals(listOf(GameOperation.CREATE, GameOperation.PAUSE), calls.map { it.operation })
+        assertFalse(s.state.value.game!!.toFinalBoardState(s.state.value).canRollDice)
+        s.resumeGame(); s.advance()
+        assertEquals(GameOperation.AI_ROLL,calls.last().operation)
+    }
+
+    @Test fun uncertainPauseRetryKeepsCommandAndCannotResumeEarly() {
+        val calls = mutableListOf<GameCommand>()
+        var fail = true
+        val s = store { c ->
+            calls += c
+            if(c.operation == GameOperation.PAUSE && fail) { fail = false; throw IOException("응답 유실") }
+            ServerGameReply(if(c.operation == GameOperation.PAUSE) fixtureGame().copy(status="PAUSED") else fixtureGame())
+        }
+        s.start();s.pauseGame();val pending=s.state.value.pending!!
+        s.resumeGame();s.roll();assertEquals(2,calls.size)
+        s.retry();assertEquals(pending,calls.last());assertEquals("PAUSED",s.state.value.game!!.status)
+    }
+
+    @Test fun abandonIsTerminalAndNewGameRequiresExplicitStart() {
+        val calls = mutableListOf<GameCommand>()
+        val s = store { c ->
+            calls += c
+            ServerGameReply(if(c.operation == GameOperation.ABANDON) fixtureGame().copy(status="ABANDONED",phase="ABANDONED") else fixtureGame())
+        }
+        s.start();s.abandonGame();s.advance();s.roll();s.resumeGame();s.abandonGame()
+        assertEquals(listOf(GameOperation.CREATE,GameOperation.ABANDON),calls.map { it.operation })
+        s.startNewGame();assertEquals(GameOperation.CREATE,calls.last().operation)
+    }
 }

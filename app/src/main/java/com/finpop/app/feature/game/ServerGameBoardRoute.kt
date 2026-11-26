@@ -17,13 +17,14 @@ fun ServerGameBoardRoute(store: GameSessionStore, onExit: () -> Unit, onMessage:
     val game = ui.game
     var collapsed by remember(game?.pendingQuiz?.attemptId ?: game?.lastQuizResult?.attemptId) { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var confirmAbandon by remember { mutableStateOf(false) }
     var hideFinished by remember(game?.gameId) { mutableStateOf(false) }
     val quiz = game?.pendingQuiz
     var seconds by remember(quiz?.attemptId) { mutableIntStateOf(20) }
     var timeoutSent by remember(quiz?.attemptId) { mutableStateOf(false) }
-    LaunchedEffect(quiz?.attemptId, quiz?.deadlineAt, ui.clockOffsetMillis, ui.busy, ui.error) {
+    LaunchedEffect(quiz?.attemptId, quiz?.deadlineAt, game?.status, ui.clockOffsetMillis, ui.busy, ui.error) {
         if (ui.error != null) timeoutSent = false
-        if (quiz != null && game.currentPlayerId == "P1") {
+        if (quiz != null && game.currentPlayerId == "P1" && game.status == "ACTIVE") {
             while (true) {
                 seconds = quizSecondsRemaining(quiz.deadlineAt, ui.clockOffsetMillis, System.currentTimeMillis())
                 if (seconds <= 0) {
@@ -54,7 +55,7 @@ fun ServerGameBoardRoute(store: GameSessionStore, onExit: () -> Unit, onMessage:
         }
     } else {
         val result = game.lastQuizResult
-        val waitingForMovement = ui.rolling || ui.animatedPosition != null
+        val waitingForMovement = ui.rolling || ui.animatedPosition != null || game.status != "ACTIVE"
         val userQuestion = quiz?.takeIf { game.currentPlayerId == "P1" && game.phase == "QUIZ_OPEN" && !waitingForMovement }
         val userResult = result?.takeIf { it.playerId == "P1" && game.currentPlayerId == "P1" &&
             game.phase in setOf("PURCHASE_PENDING", "TURN_REVIEW") && !waitingForMovement }
@@ -84,7 +85,7 @@ fun ServerGameBoardRoute(store: GameSessionStore, onExit: () -> Unit, onMessage:
         val hasPopup = card != null || aiResult != null || ui.error != null || showMenu
         MainGameBoardScreen(
             state = game.toFinalBoardState(ui).copy(canRollDice = game.toFinalBoardState(ui).canRollDice && !hasPopup),
-            onMenuClick = { if (card == null && aiResult == null) showMenu = true },
+            onMenuClick = { showMenu = true },
             onTabSelected = { if (!hasPopup) onMessage("해당 화면은 연결 준비 중입니다.") },
             onRollDice = { store.roll() },
             onTileClick = { if (!hasPopup) onMessage("칸 상세 화면은 연결 준비 중입니다.") },
@@ -108,18 +109,18 @@ fun ServerGameBoardRoute(store: GameSessionStore, onExit: () -> Unit, onMessage:
                 }
             },
         )
-        if (game.phase == "INITIATIVE_PENDING" && ui.error == null) {
+        if (game.phase == "INITIATIVE_PENDING" && ui.error == null && game.status == "ACTIVE") {
             AlertDialog(onDismissRequest = {}, title = { Text("AI 대결 준비") },
                 text = { Text("양쪽 700G·7턴으로 시작합니다. 주사위로 선공을 결정하세요.") },
                 confirmButton = { TextButton(enabled = !ui.busy, onClick = store::initiative) { Text("선공 결정") } })
         }
         if (game.phase == "TURN_READY" && game.currentPlayerId == "P1" &&
-            game.player("P1").islandWaitTurns > 0 && ui.error == null) {
+            game.player("P1").islandWaitTurns > 0 && ui.error == null && game.status == "ACTIVE") {
             AlertDialog(onDismissRequest = {}, title = { Text("무인도 대기") },
                 text = { Text("이번 차례는 이동하지 않고 1턴을 소비합니다.") },
                 confirmButton = { TextButton(enabled = !ui.busy, onClick = store::skipIsland) { Text("확인") } })
         }
-        if (game.phase == "TURN_REVIEW" && game.currentPlayerId == "P1" && result == null && ui.error == null) {
+        if (game.phase == "TURN_REVIEW" && game.currentPlayerId == "P1" && result == null && ui.error == null && game.status == "ACTIVE") {
             AlertDialog(onDismissRequest = {}, title = { Text("이동 완료") },
                 text = { Text("도착 칸 처리를 마쳤습니다. 차례를 종료하세요.") },
                 confirmButton = { TextButton(enabled = !ui.busy, onClick = store::finishUserResult) { Text("차례 종료") } })
@@ -131,13 +132,45 @@ fun ServerGameBoardRoute(store: GameSessionStore, onExit: () -> Unit, onMessage:
                 dismissButton = { TextButton(onClick = { hideFinished = true }) { Text("보드 확인") } })
         }
     }
-    if (showMenu) {
+    val canControl = !ui.busy && ui.pending == null && ui.error == null
+    if (game?.status == "PAUSED" && !confirmAbandon && ui.error == null) {
+        AlertDialog(onDismissRequest = {}, title = { Text("대결 일시정지") },
+            text = { Column {
+                Text("퀴즈 남은 시간과 진행 상태를 저장했습니다. 재개하면 이어서 진행합니다.")
+                TextButton(enabled = canControl, onClick = { confirmAbandon = true }) { Text("대결 포기") }
+                TextButton(enabled = canControl, onClick = onExit) { Text("로그인 화면으로") }
+            } },
+            confirmButton = { TextButton(enabled = canControl, onClick = { showMenu = false; store.resumeGame() }) { Text("대결 재개") } })
+    }
+    if (game?.status == "ABANDONED" && ui.error == null) {
+        AlertDialog(onDismissRequest = {}, title = { Text("대결을 포기했습니다") },
+            text = { Text("이 대결의 보상과 완료 횟수는 지급되지 않습니다.") },
+            confirmButton = { TextButton(enabled = canControl, onClick = store::startNewGame) { Text("새 대결") } },
+            dismissButton = { TextButton(enabled = canControl, onClick = onExit) { Text("로그인 화면으로") } })
+    }
+    if (showMenu && game?.status != "PAUSED" && !confirmAbandon) {
         AlertDialog(onDismissRequest = { showMenu = false }, title = { Text("대결 메뉴") },
-            text = { Text("서버에 확정된 진행 상태를 다시 불러올 수 있습니다. 퀴즈 진행 중 나가도 서버 제한 시간은 유지됩니다.") },
-            confirmButton = { TextButton(enabled = !ui.busy && ui.pending == null, onClick = {
+            text = { Column {
+                Text("일시정지하면 퀴즈 남은 시간을 보존합니다. 포기하면 보상 없이 대결이 종료됩니다.")
+                TextButton(enabled = canControl && game?.status == "ACTIVE", onClick = {
+                    showMenu = false; store.pauseGame()
+                }) { Text("대결 일시정지") }
+                TextButton(enabled = canControl && game?.status in setOf("ACTIVE", "PAUSED"), onClick = {
+                    confirmAbandon = true
+                }) { Text("대결 포기") }
+            } },
+            confirmButton = { TextButton(enabled = canControl, onClick = {
                 showMenu = false; store.refresh()
             }) { Text("상태 새로고침") } },
-            dismissButton = { TextButton(onClick = { showMenu = false; onExit() }) { Text("로그인 화면으로") } })
+            dismissButton = { TextButton(onClick = { showMenu = false }) { Text("계속하기") } })
+    }
+    if (confirmAbandon) {
+        AlertDialog(onDismissRequest = { confirmAbandon = false }, title = { Text("대결을 포기할까요?") },
+            text = { Text("포기하면 다시 이어할 수 없으며 보상과 완료 횟수도 지급되지 않습니다.") },
+            confirmButton = { TextButton(enabled = canControl, onClick = {
+                confirmAbandon = false; showMenu = false; store.abandonGame()
+            }) { Text("포기하기") } },
+            dismissButton = { TextButton(onClick = { confirmAbandon = false }) { Text("취소") } })
     }
     ui.error?.let { message ->
         AlertDialog(onDismissRequest = {}, title = { Text("요청을 확인해 주세요") }, text = { Text(message) },
