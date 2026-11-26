@@ -20,6 +20,8 @@ fun Navigation(onMessage: (String) -> Unit, gameStore: GameSessionStore) {
     var showGameBoard by rememberSaveable { mutableStateOf(false) }
     var loadingAction by remember { mutableStateOf<LoginAction?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val gameUi by gameStore.state.collectAsState()
+    val hasGameSession = showGameBoard && gameUi.boundUserId != null
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -29,8 +31,8 @@ fun Navigation(onMessage: (String) -> Unit, gameStore: GameSessionStore) {
         gameStore.start(me.selectedCharacterId ?: "CHEESE")
         showGameBoard = true
     }
-    BackHandler(enabled = showGameBoard) { showGameBoard = false }
-    if (showGameBoard) {
+    BackHandler(enabled = hasGameSession) { showGameBoard = false }
+    if (hasGameSession) {
         ServerGameBoardRoute(gameStore, onExit = { showGameBoard = false }, onMessage = onMessage)
     } else {
         LoginScreen(

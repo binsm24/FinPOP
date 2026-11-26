@@ -7,6 +7,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 
+@kotlinx.serialization.Serializable
 data class GameCommand(
     val operation: GameOperation,
     val gameId: String? = null,

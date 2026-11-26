@@ -9,7 +9,10 @@ import java.time.Instant
 
 data class GameSessionUi(
     val game: ServerGame? = null,
+    val boundUserId: String? = null,
     val busy: Boolean = false,
+    val recovering: Boolean = false,
+    val foreground: Boolean = true,
     val rolling: Boolean = false,
     val dice: Int = 1,
     val roller: String = "P1",
@@ -27,6 +30,7 @@ class GameSessionStore(
     private val api: GameGateway,
     private val scope: CoroutineScope,
     private val pause: suspend (Long) -> Unit = { delay(it) },
+    private val journal: GameRecoveryJournal = MemoryGameRecoveryJournal(),
 ) {
     private val mutable = MutableStateFlow(GameSessionUi())
     val state = mutable.asStateFlow()
@@ -34,87 +38,179 @@ class GameSessionStore(
     private var owner: String? = null
     private var character = "CHEESE"
     private var activeJob: Job? = null
+    private var record = GameRecoveryRecord()
+    private var loaded = false
+    private var refreshAfterRequest = false
 
     fun bindUser(userId: String) {
         if (owner == userId) return
         generation++
         activeJob?.cancel()
         owner = userId
-        mutable.value = GameSessionUi()
+        record = GameRecoveryRecord()
+        loaded = false
+        refreshAfterRequest = false
+        mutable.value = GameSessionUi(boundUserId = userId)
     }
 
     fun start(characterId: String = character) {
         character = characterId
-        if (state.value.game != null || state.value.busy) return
-        perform(GameCommand(GameOperation.CREATE, body = buildJsonObject {
-            put("mode", "AI"); put("characterId", character)
-        }))
+        if (state.value.busy) return
+        if (state.value.pending != null) { retry(); return }
+        if (state.value.game != null) { refresh(); return }
+        perform(createCommand(), recovery = true, discover = true)
     }
+
+    private fun createCommand() = GameCommand(GameOperation.CREATE, body = buildJsonObject {
+        put("mode", "AI"); put("characterId", character)
+    })
 
     fun startNewGame() {
-        if (state.value.busy || state.value.game?.status !in setOf("FINISHED", "ABANDONED")) return
-        mutable.value = GameSessionUi()
-        start()
+        if (state.value.busy || state.value.pending != null ||
+            state.value.game?.status !in setOf("FINISHED", "ABANDONED")) return
+        perform(createCommand(), reset = true)
     }
 
-    private fun perform(command: GameCommand, retry: Boolean = false) {
+    /** 화면이 보이지 않는 동안 후속 AI 요청을 보내지 않습니다. 복귀 시 먼저 서버를 조회합니다. */
+    fun setForeground(visible: Boolean) {
+        if (state.value.foreground == visible) return
+        mutable.value = state.value.copy(foreground = visible)
+        if (!visible) return
+        if (state.value.busy) {
+            if (!state.value.recovering) refreshAfterRequest = true
+        } else retry()
+    }
+
+    private fun perform(requested: GameCommand, recovery: Boolean = false,
+        discover: Boolean = false, reset: Boolean = false) {
         if (state.value.busy) return
         val epoch = generation
-        val moving = command.operation in setOf(GameOperation.ROLL, GameOperation.AI_ROLL)
-        val actor = if (command.operation == GameOperation.AI_ROLL) "P2" else "P1"
-        mutable.value = state.value.copy(busy = true, error = null,
-            pending = if (command.operation == GameOperation.GET) null else command,
-            rolling = moving, roller = if (moving) actor else state.value.roller)
+        val user = owner
+        mutable.value = state.value.copy(busy = true, recovering = recovery, error = null,
+            pending = if (requested.operation == GameOperation.GET) null else requested)
         activeJob = scope.launch {
+            var command = requested
+            suspend fun save(next: GameRecoveryRecord) {
+                user?.let { journal.write(it, next) }
+                ensureActive()
+                if (epoch != generation) throw CancellationException()
+                record = next
+            }
             try {
+                if (!loaded) {
+                    val saved = user?.let { journal.read(it) } ?: record
+                    ensureActive()
+                    if (epoch != generation) return@launch
+                    record = saved
+                    loaded = true
+                }
+                if (reset) save(GameRecoveryRecord())
+                if (discover) command = record.pending ?: record.gameId?.let { GameCommand(GameOperation.GET, it) } ?: requested
+                val replay = recovery && command.operation != GameOperation.GET &&
+                    (record.pending != null || !discover)
+                val moving = !recovery && command.operation in setOf(GameOperation.ROLL, GameOperation.AI_ROLL)
+                val actor = if (command.operation == GameOperation.AI_ROLL) "P2" else "P1"
+                if (command.operation != GameOperation.GET) {
+                    // 서버 호출 전 디스크에 기록합니다. 응답 직후 종료돼도 동일한 요청 키로 복구합니다.
+                    save(record.copy(pending = command, gameId = command.gameId ?: record.gameId))
+                }
+                mutable.value = state.value.copy(pending = command.takeUnless { it.operation == GameOperation.GET },
+                    rolling = moving, roller = if (moving) actor else state.value.roller)
                 val started = System.currentTimeMillis()
-                val reply = try { api.execute(command) }
+                var reply = try { api.execute(command) }
                 catch (error: GameApiException) {
                     if (command.operation == GameOperation.CREATE && error.code == "ACTIVE_GAME_EXISTS") {
                         val id = error.details["activeGameId"]?.jsonPrimitive?.contentOrNull ?: throw error
-                        api.execute(GameCommand(GameOperation.GET, id))
+                        // 생성 충돌은 처리 결과가 확정됐습니다. 이후 실패는 조회만 재시도합니다.
+                        save(record.copy(gameId = id, pending = null))
+                        command = GameCommand(GameOperation.GET, id)
+                        api.execute(command)
                     } else throw error
                 }
                 ensureActive()
                 if (epoch != generation) return@launch
-                if (moving) pause((900 - (System.currentTimeMillis() - started)).coerceAtLeast(0))
+                val finishedTurn = if (command.finishAfterPurchase) reply.game.currentTurnId else record.finishTurnId
+                if (replay && command.operation != GameOperation.GET) {
+                    // 중복 요청 응답은 과거 스냅샷일 수 있으므로 최신 조회 전에는 화면·AI에 전달하지 않습니다.
+                    save(record.copy(gameId = reply.game.gameId, pending = null, finishTurnId = finishedTurn))
+                    command = GameCommand(GameOperation.GET, reply.game.gameId)
+                    mutable.value = state.value.copy(pending = null)
+                    reply = api.execute(command)
+                }
+                ensureActive()
+                if (epoch != generation) return@launch
                 val old = state.value
-                val offset = if (!retry) reply.serverTime?.let {
+                if (old.game?.gameId == reply.game.gameId && reply.game.stateVersion < old.game.stateVersion)
+                    throw GameApiException("STALE_GAME_STATE", "이전 상태가 응답되었습니다. 최신 상태를 다시 확인해 주세요.")
+                val sameGame = record.gameId == reply.game.gameId
+                val event = reply.purchaseEvent?.takeIf { !recovery && sameGame && it.action == "BUY" &&
+                    it.eventId !in record.presentedPurchaseEvents }
+                val offset = reply.serverTime?.let {
                     runCatching { Instant.parse(it).toEpochMilli() - System.currentTimeMillis() }.getOrNull()
-                } ?: old.clockOffsetMillis else old.clockOffsetMillis
-                val oldPosition = if (moving) old.game?.player(actor)?.position else null
-                val event = reply.purchaseEvent?.takeIf { it.action == "BUY" }
-                val queue = if (event != null && old.purchaseEvents.none { it.eventId == event.eventId })
-                    old.purchaseEvents + event else old.purchaseEvents
-                mutable.value = old.copy(game = reply.game, pending = null, rolling = false,
-                    dice = reply.diceValue ?: old.dice, animatedPosition = oldPosition,
-                    clockOffsetMillis = offset, finishAfterPurchase = command.finishAfterPurchase,
-                    purchaseEvents = queue)
-                for (position in reply.movementPath) {
-                    if (epoch != generation) return@launch
+                } ?: old.clockOffsetMillis
+                val next = GameRecoveryRecord(gameId = reply.game.gameId,
+                    acknowledgedAiResult = record.acknowledgedAiResult.takeIf { sameGame },
+                    presentedPurchaseEvents = ((if (sameGame) record.presentedPurchaseEvents else emptyList()) +
+                        listOfNotNull(event?.eventId)).takeLast(64),
+                    finishTurnId = finishedTurn?.takeIf { it == reply.game.currentTurnId && reply.game.currentPlayerId == "P1" })
+                save(next)
+                if (moving && state.value.foreground) pause((900 - (System.currentTimeMillis() - started)).coerceAtLeast(0))
+                ensureActive()
+                if (epoch != generation) return@launch
+                val animate = moving && state.value.foreground
+                mutable.value = state.value.copy(game = reply.game, pending = null, rolling = false,
+                    dice = reply.diceValue ?: old.dice, animatedPosition = if (animate) old.game?.player(actor)?.position else null,
+                    clockOffsetMillis = offset, acknowledgedAiResult = next.acknowledgedAiResult,
+                    finishAfterPurchase = next.finishTurnId != null,
+                    purchaseEvents = if (!sameGame || recovery || !state.value.foreground) emptyList()
+                        else old.purchaseEvents + listOfNotNull(event))
+                if (animate) for (position in reply.movementPath) {
+                    ensureActive()
+                    if (epoch != generation || !state.value.foreground) break
                     mutable.value = state.value.copy(animatedPosition = position)
                     pause(180)
                 }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: GameApiException) {
-                if (epoch == generation) mutable.value = state.value.copy(
-                    error = error.message ?: "요청을 처리하지 못했습니다.",
-                    pending = if (error.definitive) null else command.takeUnless { it.operation == GameOperation.GET })
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: GameApiException) {
+                if (epoch == generation) {
+                    if (error.definitive) {
+                        try { save(record.copy(pending = null)) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { /* 저장 실패 시 기존 요청을 보존합니다. */ }
+                    }
+                    if (command.operation == GameOperation.GET && error.code == "RESOURCE_NOT_FOUND") {
+                        try {
+                            save(GameRecoveryRecord())
+                            mutable.value = state.value.copy(game = null, purchaseEvents = emptyList())
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { /* 기록 정리가 실패하면 기존 게임 ID로 다시 조회합니다. */ }
+                    }
+                    mutable.value = state.value.copy(error = error.message ?: "요청을 처리하지 못했습니다.",
+                        pending = record.pending)
+                }
             } catch (_: Exception) {
                 if (epoch == generation) mutable.value = state.value.copy(
-                    error = "서버 응답을 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.",
-                    pending = command.takeUnless { it.operation == GameOperation.GET })
+                    error = "진행 상태를 복원하지 못했습니다. 연결과 앱 저장 공간을 확인한 뒤 다시 시도해 주세요.",
+                    pending = record.pending)
             } finally {
-                if (epoch == generation) mutable.value = state.value.copy(busy = false, rolling = false, animatedPosition = null)
+                finishRequest(epoch)
             }
+        }
+    }
+
+    private fun finishRequest(epoch: Int) {
+        if (epoch != generation) return
+        mutable.value = state.value.copy(busy = false, recovering = false, rolling = false, animatedPosition = null)
+        if (refreshAfterRequest && state.value.foreground) {
+            refreshAfterRequest = false
+            if (state.value.error == null) retry()
         }
     }
 
     private fun action(operation: GameOperation, extra: JsonObject = buildJsonObject {}, finish: Boolean = false) {
         val current = state.value
         val game = current.game ?: return
-        if (current.busy || current.pending != null || current.error != null) return
+        if (current.busy || current.pending != null || current.error != null || !current.foreground) return
         val allowed = when (operation) {
             GameOperation.PAUSE -> game.status == "ACTIVE"
             GameOperation.RESUME -> game.status == "PAUSED"
@@ -131,17 +227,17 @@ class GameSessionStore(
 
     fun retry() {
         if (state.value.busy) return
-        state.value.pending?.let { perform(it, retry = true); return }
+        state.value.pending?.let { perform(it, recovery = true); return }
         val game = state.value.game
         if (game == null) {
             mutable.value = state.value.copy(error = null)
             start()
-        } else perform(GameCommand(GameOperation.GET, game.gameId))
+        } else perform(GameCommand(GameOperation.GET, game.gameId), recovery = true)
     }
 
     fun refresh() {
         if (state.value.pending != null || state.value.busy) return
-        state.value.game?.let { perform(GameCommand(GameOperation.GET, it.gameId)) }
+        state.value.game?.let { perform(GameCommand(GameOperation.GET, it.gameId), recovery = true) }
     }
 
     fun pauseGame() = action(GameOperation.PAUSE)
@@ -201,8 +297,28 @@ class GameSessionStore(
     }
 
     fun acknowledgeAiResult() {
-        val result = state.value.game?.lastQuizResult ?: return
-        if (result.playerId == "P2") mutable.value = state.value.copy(acknowledgedAiResult = result.attemptId)
+        val current = state.value
+        val result = current.game?.lastQuizResult ?: return
+        if (result.playerId != "P2" || current.busy || current.pending != null || current.error != null || !current.foreground) return
+        val epoch = generation
+        val user = owner
+        mutable.value = current.copy(busy = true)
+        activeJob = scope.launch {
+            try {
+                val next = record.copy(acknowledgedAiResult = result.attemptId)
+                user?.let { journal.write(it, next) }
+                ensureActive()
+                if (epoch == generation) {
+                    record = next
+                    mutable.value = state.value.copy(acknowledgedAiResult = result.attemptId)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (epoch == generation) mutable.value = state.value.copy(error = "확인 기록을 저장하지 못했습니다. 저장 공간을 확인해 주세요.")
+            } finally {
+                finishRequest(epoch)
+            }
+        }
     }
 
     fun purchaseAnimationFinished(eventId: String) {
@@ -213,7 +329,7 @@ class GameSessionStore(
     fun advance() {
         val current = state.value
         val game = current.game ?: return
-        if (current.busy || current.pending != null || current.error != null || game.status != "ACTIVE") return
+        if (current.busy || current.pending != null || current.error != null || !current.foreground || game.status != "ACTIVE") return
         if (game.currentPlayerId == "P1") {
             if (game.phase == "TURN_REVIEW" && current.finishAfterPurchase) finishUserResult()
             return

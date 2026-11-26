@@ -41,7 +41,8 @@ class GameSessionStoreTest {
         s.roll()
         assertEquals(2,calls.size)
         s.retry()
-        assertEquals(pending,calls.last());assertEquals(calls[1].requestId,calls[2].requestId)
+        assertEquals(pending,calls[2]);assertEquals(calls[1].requestId,calls[2].requestId)
+        assertEquals(GameOperation.GET,calls.last().operation)
         assertNull(s.state.value.pending)
     }
 
@@ -161,14 +162,17 @@ class GameSessionStoreTest {
     @Test fun uncertainPauseRetryKeepsCommandAndCannotResumeEarly() {
         val calls = mutableListOf<GameCommand>()
         var fail = true
+        var serverPaused = false
         val s = store { c ->
             calls += c
             if(c.operation == GameOperation.PAUSE && fail) { fail = false; throw IOException("응답 유실") }
-            ServerGameReply(if(c.operation == GameOperation.PAUSE) fixtureGame().copy(status="PAUSED") else fixtureGame())
+            if(c.operation == GameOperation.PAUSE) serverPaused = true
+            ServerGameReply(fixtureGame().copy(status=if(serverPaused) "PAUSED" else "ACTIVE"))
         }
         s.start();s.pauseGame();val pending=s.state.value.pending!!
         s.resumeGame();s.roll();assertEquals(2,calls.size)
-        s.retry();assertEquals(pending,calls.last());assertEquals("PAUSED",s.state.value.game!!.status)
+        s.retry();assertEquals(pending,calls[2]);assertEquals(GameOperation.GET,calls.last().operation)
+        assertEquals("PAUSED",s.state.value.game!!.status)
     }
 
     @Test fun abandonIsTerminalAndNewGameRequiresExplicitStart() {

@@ -4,6 +4,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -13,6 +17,19 @@ import kotlinx.coroutines.delay
 /** 팀원이 만든 보드와 티켓 팝업에 서버 상태·콜백만 연결합니다. */
 @Composable
 fun ServerGameBoardRoute(store: GameSessionStore, onExit: () -> Unit, onMessage: (String) -> Unit) {
+    val lifecycle = (LocalContext.current as? LifecycleOwner)?.lifecycle
+    DisposableEffect(store, lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> store.setForeground(false)
+                Lifecycle.Event.ON_START -> store.setForeground(true)
+                else -> Unit
+            }
+        }
+        lifecycle?.addObserver(observer)
+        if (lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) == true) store.setForeground(true)
+        onDispose { lifecycle?.removeObserver(observer); store.setForeground(false) }
+    }
     val ui by store.state.collectAsState()
     val game = ui.game
     var collapsed by remember(game?.pendingQuiz?.attemptId ?: game?.lastQuizResult?.attemptId) { mutableStateOf(false) }
@@ -22,9 +39,9 @@ fun ServerGameBoardRoute(store: GameSessionStore, onExit: () -> Unit, onMessage:
     val quiz = game?.pendingQuiz
     var seconds by remember(quiz?.attemptId) { mutableIntStateOf(20) }
     var timeoutSent by remember(quiz?.attemptId) { mutableStateOf(false) }
-    LaunchedEffect(quiz?.attemptId, quiz?.deadlineAt, game?.status, ui.clockOffsetMillis, ui.busy, ui.error) {
+    LaunchedEffect(quiz?.attemptId, quiz?.deadlineAt, game?.status, ui.foreground, ui.clockOffsetMillis, ui.busy, ui.error) {
         if (ui.error != null) timeoutSent = false
-        if (quiz != null && game.currentPlayerId == "P1" && game.status == "ACTIVE") {
+        if (quiz != null && game.currentPlayerId == "P1" && game.status == "ACTIVE" && ui.foreground) {
             while (true) {
                 seconds = quizSecondsRemaining(quiz.deadlineAt, ui.clockOffsetMillis, System.currentTimeMillis())
                 if (seconds <= 0) {
@@ -39,7 +56,7 @@ fun ServerGameBoardRoute(store: GameSessionStore, onExit: () -> Unit, onMessage:
         }
     }
     LaunchedEffect(game?.gameId, game?.stateVersion, ui.busy, ui.error,
-        ui.acknowledgedAiResult, ui.finishAfterPurchase) {
+        ui.acknowledgedAiResult, ui.finishAfterPurchase, ui.foreground) {
         store.advance()
     }
     BackHandler { showMenu = true }
@@ -49,13 +66,13 @@ fun ServerGameBoardRoute(store: GameSessionStore, onExit: () -> Unit, onMessage:
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center) {
                 if (ui.busy) CircularProgressIndicator()
-                Text("AI 대결을 불러오고 있습니다.")
+                Text(if (ui.recovering) "진행 중인 대결을 복원하고 있습니다." else "AI 대결을 불러오고 있습니다.")
                 TextButton(onClick = onExit) { Text("로그인 화면으로") }
             }
         }
     } else {
         val result = game.lastQuizResult
-        val waitingForMovement = ui.rolling || ui.animatedPosition != null || game.status != "ACTIVE"
+        val waitingForMovement = ui.rolling || ui.animatedPosition != null || ui.recovering || game.status != "ACTIVE"
         val userQuestion = quiz?.takeIf { game.currentPlayerId == "P1" && game.phase == "QUIZ_OPEN" && !waitingForMovement }
         val userResult = result?.takeIf { it.playerId == "P1" && game.currentPlayerId == "P1" &&
             game.phase in setOf("PURCHASE_PENDING", "TURN_REVIEW") && !waitingForMovement }
@@ -132,7 +149,7 @@ fun ServerGameBoardRoute(store: GameSessionStore, onExit: () -> Unit, onMessage:
                 dismissButton = { TextButton(onClick = { hideFinished = true }) { Text("보드 확인") } })
         }
     }
-    val canControl = !ui.busy && ui.pending == null && ui.error == null
+    val canControl = !ui.busy && ui.foreground && ui.pending == null && ui.error == null
     if (game?.status == "PAUSED" && !confirmAbandon && ui.error == null) {
         AlertDialog(onDismissRequest = {}, title = { Text("대결 일시정지") },
             text = { Column {

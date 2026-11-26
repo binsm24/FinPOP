@@ -28,7 +28,7 @@ internal fun ServerGame.toFinalBoardState(ui: GameSessionUi): GameBoardUiState {
         diceValue = ui.dice, isRolling = ui.rolling,
         canRollDice = status == "ACTIVE" && phase == "TURN_READY" && currentPlayerId == "P1" &&
             p1.remainingTurns > 0 && p1.islandWaitTurns == 0 &&
-            !ui.busy && ui.pending == null && ui.error == null,
+            !ui.busy && ui.foreground && ui.pending == null && ui.error == null,
         playerPosition = position("P1", p1.position), aiPosition = position("P2", p2.position),
         playerOwnedTiles = owns("P1"), aiOwnedTiles = owns("P2"),
         pendingPurchases = ui.purchaseEvents.map { event ->
